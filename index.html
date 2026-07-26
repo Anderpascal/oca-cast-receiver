@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>La Oca · Televisión</title>
+  <link rel="stylesheet" href="receiver.css">
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+</head>
+<body>
+  <main id="stage" aria-live="polite">
+    <section class="paper" aria-label="Tablero de La Oca">
+      <div class="print-head"><span>LA OCA BORRACHA</span><span id="edition">EDICIÓN CLÁSICA</span><span>SEGUNDA PANTALLA</span></div>
+      <div id="board" class="board"></div>
+      <div class="misregister one"></div><div class="misregister two"></div>
+    </section>
+    <aside class="score">
+      <div class="score-kicker">AHORA JUEGA</div>
+      <div id="player-mark" class="player-mark">1</div>
+      <h1 id="player-name">MESA PREPARADA</h1>
+      <div id="round" class="stamp">RONDA 1</div>
+      <div id="dice" class="dice" aria-label="Sin tirada">·</div>
+      <ol id="ranking" class="ranking"></ol>
+      <div id="effects" class="effects"></div>
+      <div class="remote-note">TODO SE DECIDE EN EL MANDO</div>
+    </aside>
+    <section id="card" class="takeover card" hidden><div class="takeover-sheet"><div id="card-suit" class="eyebrow"></div><h2 id="card-title"></h2><p id="card-body"></p></div></section>
+    <section id="ceremony" class="takeover ceremony" hidden><div class="burst"></div><div class="ceremony-copy"><div id="ceremony-type" class="eyebrow"></div><h2 id="ceremony-title"></h2><p id="ceremony-body"></p><ol id="ceremony-ranking" class="ceremony-ranking" hidden></ol></div></section>
+    <section id="privacy" class="takeover privacy" hidden><div class="privacy-poster"><div class="goose">OCA</div><h2>TELE TAPADA</h2><p>LA PARTIDA SIGUE EN EL MANDO</p></div></section>
+    <section id="connection" class="takeover connection"><div class="connection-poster"><div class="cast-glyph">◔</div><h2>MESA PREPARADA</h2><p>ELIGE ESTA TELE DESDE LA OCA</p></div></section>
+    <div id="private-note" class="private-note" hidden>DECISIÓN SECRETA EN EL MANDO</div>
+    <div id="toast" class="toast" hidden></div>
+  </main>
+  <script src="protocol.js"></script>
+  <script src="receiver.js"></script>
+</body>
+</html>
