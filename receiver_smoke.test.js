@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const protocol = require('./protocol.js');
+const boardArt = require('./board_art.js');
 const receiverSource = fs.readFileSync(
   require.resolve('./receiver.js'),
   'utf8',
@@ -61,9 +62,11 @@ function renderDemo(mode) {
     body: new FakeElement(),
     getElementById: element,
     createElement: () => new FakeElement(),
+    createElementNS: () => new FakeElement(),
   };
   const context = {
     OcaCastProtocol: protocol,
+    OcaBoardArt: boardArt,
     URLSearchParams,
     clearTimeout,
     console,
@@ -76,7 +79,7 @@ function renderDemo(mode) {
   return { element };
 }
 
-function bootCastReceiver() {
+function bootCastReceiver(extraContext = {}) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new FakeElement());
@@ -114,6 +117,7 @@ function bootCastReceiver() {
     receiverSource,
     {
       OcaCastProtocol: protocol,
+      OcaBoardArt: boardArt,
       TextEncoder,
       URLSearchParams,
       cast,
@@ -123,10 +127,12 @@ function bootCastReceiver() {
         body: new FakeElement(),
         getElementById: element,
         createElement: () => new FakeElement(),
+        createElementNS: () => new FakeElement(),
       },
       location: { search: '' },
       setTimeout,
       window: { cast },
+      ...extraContext,
     },
     { filename: 'receiver.js' },
   );
@@ -199,7 +205,7 @@ test('HTML tiene IDs únicos, scripts ordenados y ninguna ruta de emparejamiento
 
 test('demo tablero construye 63 casillas y oculta conexión', () => {
   const { element } = renderDemo('board');
-  assert.equal(element('board').children.length, 63);
+  assert.equal(element('board-cells').children.length, 63);
   assert.equal(element('connection').hidden, true);
   assert.equal(element('player-name').textContent, 'LOLA');
 });
@@ -215,7 +221,7 @@ test('demos de carta y privacidad activan su takeover', () => {
 
 test('decisión secreta conserva tablero y muestra aviso lateral', () => {
   const { element } = renderDemo('private');
-  assert.equal(element('board').children.length, 63);
+  assert.equal(element('board-cells').children.length, 63);
   assert.equal(element('private-note').hidden, false);
   assert.equal(element('privacy').hidden, true);
 });
@@ -251,7 +257,7 @@ test('CAF aplica snapshot válido, renderiza y confirma secuencia', () => {
     'movil-a',
     castCue(1, 'snapshot', { state: publicSnapshot() }),
   );
-  assert.equal(cast.element('board').children.length, 63);
+  assert.equal(cast.element('board-cells').children.length, 63);
   assert.equal(cast.element('connection').hidden, true);
   assert.equal(cast.sent.at(-1).payload.type, 'ack');
   assert.equal(cast.sent.at(-1).payload.sequence, 1);
@@ -282,4 +288,141 @@ test('CAF repara huecos y rechaza versión, tamaño o sender incorrectos', () =>
   cast.message('movil-b', castCue(1, 'dice_started'));
   assert.equal(cast.sent.at(-1).senderId, 'movil-b');
   assert.equal(cast.sent.at(-1).payload.type, 'busy');
+});
+test('la espiral del tablero coincide casilla a casilla con la del móvil', () => {
+  const geo = boardArt.geometryFor(63);
+  assert.equal(geo.cols, 8);
+  assert.equal(geo.rows, 8);
+  assert.equal(geo.cells.length, 63);
+  const at = (n) => geo.cells[n - 1];
+  // Arranca abajo a la izquierda y recorre la fila inferior hacia la derecha.
+  assert.deepEqual([at(1).col, at(1).row], [0, 7]);
+  assert.deepEqual([at(8).col, at(8).row], [7, 7]);
+  // Sube por la derecha y vuelve por arriba hacia la izquierda.
+  assert.deepEqual([at(15).col, at(15).row], [7, 0]);
+  assert.deepEqual([at(22).col, at(22).row], [0, 0]);
+  // Y baja por la izquierda para cerrar el primer circuito.
+  assert.deepEqual([at(28).col, at(28).row], [0, 6]);
+  // La meta no es una casilla más: es el bloque reservado del medallón.
+  assert.deepEqual(
+    [at(63).col, at(63).row, at(63).colSpan],
+    [3, 3, 2],
+  );
+  // Ninguna casilla comparte hueco con otra.
+  const seen = new Set(geo.cells.map((c) => `${c.col},${c.row}`));
+  assert.equal(seen.size, geo.cells.length);
+});
+
+test('la partida rápida usa retícula 6x6 y meta de bloque 2x2', () => {
+  const geo = boardArt.geometryFor(30);
+  assert.equal(geo.cols, 6);
+  assert.equal(geo.cells.length, 30);
+  const meta = geo.cells[29];
+  assert.deepEqual([meta.col, meta.row, meta.colSpan, meta.rowSpan], [2, 2, 2, 2]);
+});
+
+test('el plan del salto reproduce los tiempos del móvil', () => {
+  // Camino corto: paso visible de 260 ms por casilla.
+  const corto = boardArt.hopPlanFor(3, [4, 5, 6], 6);
+  assert.equal(corto.length, 3);
+  assert.ok(corto.every((s) => s.ms === 260 && !s.jump));
+  assert.equal(boardArt.hopDuration(corto), 780);
+
+  // Camino largo realista (12 es el máximo con dos dados): se comprime para
+  // no pasarse del techo de ceremonia.
+  const largo = boardArt.hopPlanFor(1, Array.from({length: 12}, (_, i) => i + 2), 13);
+  assert.equal(largo.length, 12);
+  assert.ok(largo.every((s) => s.ms < 260));
+  assert.ok(boardArt.hopDuration(largo) <= 2200);
+
+  // El suelo de 120 ms manda sobre el techo: antes de acelerar hasta que no
+  // se vea nada, se prefiere pasarse de largo. Mismo criterio que el móvil.
+  const absurdo = boardArt.hopPlanFor(1, Array.from({length: 30}, (_, i) => i + 2), 31);
+  assert.ok(absurdo.every((s) => s.ms === 120));
+
+  // El salto largo del motor (pisar una oca) va en su propio tramo.
+  const conSalto = boardArt.hopPlanFor(3, [4, 5], 9);
+  assert.equal(conSalto.length, 3);
+  assert.equal(conSalto[2].jump, true);
+  assert.equal(conSalto[2].ms, 560);
+  assert.deepEqual([conSalto[2].from, conSalto[2].to], [5, 9]);
+
+  // Sin recorrido no se inventa animación.
+  assert.deepEqual(boardArt.hopPlanFor(7, [], 7), []);
+});
+
+test('la ficha recorre el camino y un snapshot a media animación no la corta', () => {
+  // Reloj y cuadros bajo control: la animación se ejecuta paso a paso en vez
+  // de depender del reloj real.
+  const clock = { t: 0 };
+  const frames = [];
+  const cast = bootCastReceiver({
+    Date: { now: () => clock.t },
+    requestAnimationFrame: (cb) => frames.push(cb),
+  });
+  const tick = (ms) => {
+    clock.t = ms;
+    frames.splice(0, frames.length).forEach((cb) => cb());
+  };
+  const tokenTransform = () => {
+    const layer = cast.element('board-tokens');
+    return layer.children.length ? layer.children[0].transform : null;
+  };
+
+  cast.connect('movil-a');
+  cast.message('movil-a', castCue(1, 'snapshot', { state: publicSnapshot() }));
+  const salida = tokenTransform();
+  assert.ok(salida, 'debe haber una ficha en el tablero');
+
+  // El móvil manda el recorrido 12 -> 15 y, pisándole los talones, el
+  // snapshot con la posición ya final. Ese snapshot NO debe teletransportar
+  // la ficha: si lo hiciera, la mesa no vería el recorrido.
+  cast.message('movil-a', castCue(2, 'piece_path', { from: 12, to: 15, path: [13, 14, 15] }));
+  const enVuelo = publicSnapshot();
+  enVuelo.players[0].position = 15;
+  cast.message('movil-a', castCue(3, 'snapshot', { state: enVuelo }));
+
+  const vistas = new Set();
+  for (let t = 0; t < 780; t += 60) {
+    tick(t);
+    const current = tokenTransform();
+    if (current) vistas.add(current);
+  }
+  assert.ok(vistas.size >= 6, `la ficha debe recorrer posiciones intermedias, vio ${vistas.size}`);
+  assert.ok(!vistas.has(salida) || vistas.size > 1, 'la ficha no puede quedarse quieta');
+
+  // Al terminar aterriza en la casilla 15, la que dice el estado.
+  tick(780);
+  const geo = boardArt.geometryFor(63);
+  const destino = boardArt.centerOf(geo.cells[14]);
+  const final = tokenTransform();
+  assert.match(final, /^translate\(/);
+  const [x, y] = final.match(/translate\(([-\d.]+),([-\d.]+)\)/).slice(1).map(Number);
+  assert.equal(Math.round(x), Math.round(destino.x));
+  assert.equal(Math.round(y), Math.round(destino.y));
+});
+
+test('con movimiento reducido la ficha no anima pero llega igual', () => {
+  const frames = [];
+  const cast = bootCastReceiver({
+    Date: { now: () => 0 },
+    requestAnimationFrame: (cb) => frames.push(cb),
+  });
+  cast.connect('movil-a');
+  const quieto = publicSnapshot();
+  quieto.accessibility.reducedMotion = true;
+  cast.message('movil-a', castCue(1, 'snapshot', { state: quieto }));
+  cast.message('movil-a', castCue(2, 'piece_path', { from: 12, to: 15, path: [13, 14, 15] }));
+  assert.equal(frames.length, 0, 'no debe programarse ningún cuadro');
+
+  const llegada = publicSnapshot();
+  llegada.accessibility.reducedMotion = true;
+  llegada.players[0].position = 15;
+  cast.message('movil-a', castCue(3, 'snapshot', { state: llegada }));
+  const geo = boardArt.geometryFor(63);
+  const destino = boardArt.centerOf(geo.cells[14]);
+  const final = cast.element('board-tokens').children[0].transform;
+  const [x, y] = final.match(/translate\(([-\d.]+),([-\d.]+)\)/).slice(1).map(Number);
+  assert.equal(Math.round(x), Math.round(destino.x));
+  assert.equal(Math.round(y), Math.round(destino.y));
 });

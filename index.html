@@ -12,7 +12,15 @@
   <main id="stage" aria-live="polite">
     <section class="paper" aria-label="Tablero de La Oca">
       <div class="print-head"><span>LA OCA BORRACHA</span><span id="edition">EDICIÓN CLÁSICA</span><span>SEGUNDA PANTALLA</span></div>
-      <div id="board" class="board"></div>
+      <!-- El tablero es SVG y no divs: escala sin perder filo de 720p a 4K y
+           deja dibujar los pictogramas de imprenta como vectores en vez de
+           glifos de texto. `board-cells` lleva una casilla por hijo;
+           `board-tokens`, una ficha por jugador, encima y animables. -->
+      <svg id="board" class="board" preserveAspectRatio="xMidYMid meet"
+           viewBox="0 0 800 800" role="img" aria-label="Tablero de La Oca">
+        <g id="board-cells"></g>
+        <g id="board-tokens"></g>
+      </svg>
       <div class="misregister one"></div><div class="misregister two"></div>
     </section>
     <aside class="score">
@@ -33,6 +41,7 @@
     <div id="toast" class="toast" hidden></div>
   </main>
   <script src="protocol.js"></script>
+  <script src="board_art.js"></script>
   <script src="receiver.js"></script>
 </body>
 </html>
