@@ -114,7 +114,64 @@
       S('M36,72 L64,72 L64,94 L36,94 Z', 8),
       S('M45,72 L45,94', 6), S('M55,72 L55,94', 6),
     ],
+    // Los que siguen no son casillas: son sellos de ceremonia para la banda de
+    // la tele. Misma caja 0..100 y mismo grosor de trazo, para que la banda se
+    // lea igual de lejos que el tablero.
+    brindis: [
+      S('M18,14 L46,14 L38,44 L26,44 Z', 8),
+      S('M32,44 L32,84', 8), S('M18,86 L46,86', 9),
+      S('M56,14 L84,14 L76,44 L64,44 Z', 8),
+      S('M70,44 L70,84', 8), S('M56,86 L84,86', 9),
+    ],
+    corona: [
+      S('M12,74 L20,26 L38,50 L50,18 L62,50 L80,26 L88,74 Z', 9),
+      S('M14,88 L86,88', 10),
+    ],
+    estrella: [
+      S('M50,8 L61,38 L93,38 L67,57 L77,88 L50,69 L23,88 L33,57 L7,38 L39,38 Z', 9),
+    ],
+    carta: [
+      S('M22,10 L78,10 L78,90 L22,90 Z', 9),
+      { t: 'circle', a: { cx: 50, cy: 42, r: 15, fill: 'ink' } },
+      S('M50,57 L50,76', 8),
+    ],
+    sello: [
+      { t: 'circle', a: { cx: 50, cy: 42, r: 26, 'stroke-width': 9 } },
+      S('M50,68 L50,84', 9), S('M20,88 L80,88', 10),
+    ],
   };
+
+  /// Tono, sello y antetítulo de cada ceremonia: mandan el color y el dibujo
+  /// de la banda de la tele. El tono se lee de lejos antes que el texto -verde
+  /// algo bueno, rojo algo malo-, así que no puede depender del idioma ni del
+  /// largo del título. El antetítulo dice DÓNDE pasa, para no repetir el
+  /// titular ni enseñar el nombre técnico del evento.
+  const CEREMONY = {
+    oca: { pict: 'oca', tone: 'bien', kicker: 'CASILLA DE LA OCA' },
+    puente: { pict: 'puente', tone: 'bien', kicker: 'EL PUENTE' },
+    dados: { pict: 'dados', tone: 'bien', kicker: 'LOS DADOS' },
+    tirada_extra: { pict: 'dados', tone: 'bien', kicker: 'OTRA VEZ' },
+    libertad: { pict: 'carcel', tone: 'bien', kicker: 'LA CÁRCEL' },
+    rescate: { pict: 'pozo', tone: 'bien', kicker: 'EL POZO' },
+    marea: { pict: 'pozo', tone: 'bien', kicker: 'EL POZO' },
+    indulto: { pict: 'muerte', tone: 'bien', kicker: 'LA MUERTE' },
+    seguro: { pict: 'estrella', tone: 'bien', kicker: 'EL SEGURO' },
+    comodin: { pict: 'estrella', tone: 'bien', kicker: 'COMODÍN' },
+    victoria: { pict: 'corona', tone: 'bien', kicker: 'EL JARDÍN' },
+    pozo: { pict: 'pozo', tone: 'mal', kicker: 'EL POZO' },
+    carcel: { pict: 'carcel', tone: 'mal', kicker: 'LA CÁRCEL' },
+    muerte: { pict: 'muerte', tone: 'mal', kicker: 'LA MUERTE' },
+    laberinto: { pict: 'laberinto', tone: 'mal', kicker: 'EL LABERINTO' },
+    rebote: { pict: 'puente', tone: 'mal', kicker: 'LA META' },
+    turno_saltado: { pict: 'posada', tone: 'mal', kicker: 'TURNO EN PAUSA' },
+    posada: { pict: 'posada', tone: 'neutro', kicker: 'LA POSADA' },
+    brindis: { pict: 'brindis', tone: 'neutro', kicker: 'EL PUENTE' },
+    reto: { pict: 'carta', tone: 'neutro', kicker: 'CASTIGO' },
+    regla: { pict: 'sello', tone: 'neutro', kicker: 'LEY DE LA MESA' },
+    turno: { pict: 'sello', tone: 'neutro', kicker: 'CAMBIO DE MANO' },
+    sello: { pict: 'sello', tone: 'neutro', kicker: 'LA PARTIDA' },
+  };
+  const ceremonyLook = (type) => CEREMONY[type] || CEREMONY.sello;
 
   // Roles de tinta por tipo de casilla. Constantes entre ediciones: el tablero
   // se lee como señalización aunque cambie la tirada de tinta.
@@ -164,5 +221,35 @@
   }
   const hopDuration = (segments) => segments.reduce((a, s) => a + s.ms, 0);
 
-  return { geometryFor, centerOf, PICTS, ROLE, THEMES, themeFor, U, hopPlanFor, hopDuration };
+  // LOS DADOS DE LA TELE. Espejo de `tvDiceStageMs` (lib/domain/tv/
+  // tv_event_cues.dart) y del dado del móvil (`DiceWidget`): 9 cambios de cara
+  // con intervalos CRECIENTES 60→140 ms -el dado de madera pierde impulso-, el
+  // sello de la cara final y el encogido hasta la esquina.
+  //
+  // El móvil suma este tramo antes de volver a habilitar TIRAR: si aquí se
+  // alarga y allí no, la mesa podrá tirar con los dados todavía rodando.
+  const DICE_CHANGES = 9;
+  const DICE_FIRST_MS = 60, DICE_LAST_MS = 140;
+  const DICE_STAMP_MS = 240, DICE_STOW_MS = 260;
+
+  /// Instantes (ms desde el inicio) en los que el dado cambia de cara.
+  function diceBeats() {
+    const beats = [];
+    let acc = 0;
+    for (let i = 0; i < DICE_CHANGES; i++) {
+      acc += Math.round(
+        DICE_FIRST_MS + ((DICE_LAST_MS - DICE_FIRST_MS) * i) / (DICE_CHANGES - 1),
+      );
+      beats.push(acc);
+    }
+    return beats;
+  }
+  const DICE_ROLL_MS = diceBeats()[DICE_CHANGES - 1];
+  const DICE_STAGE_MS = DICE_ROLL_MS + DICE_STAMP_MS + DICE_STOW_MS;
+
+  return {
+    geometryFor, centerOf, PICTS, ROLE, THEMES, themeFor, U,
+    hopPlanFor, hopDuration, ceremonyLook, CEREMONY,
+    diceBeats, DICE_ROLL_MS, DICE_STAMP_MS, DICE_STOW_MS, DICE_STAGE_MS,
+  };
 });

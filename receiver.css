@@ -1,13 +1,52 @@
 @font-face{font-family:Archivo;src:url(assets/Archivo-Variable.ttf) format('truetype');font-display:swap}
 @font-face{font-family:Alfa;src:url(assets/AlfaSlabOne-Regular.ttf) format('truetype');font-display:swap}
-:root{--paper:#f4eddc;--ink:#26221e;--night:#20242f;--pink:#ff48b0;--blue:#0078bf;--green:#00a95c;--yellow:#ffe800;--orange:#ff6c2f;--red:#f15060;--burgundy:#914e72;--teal:#00838a;--violet:#765ba7;--safe:clamp(28px,4vw,78px)}
-*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--night);color:var(--ink);font-family:Archivo,sans-serif}body:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:radial-gradient(#000 0.7px,transparent .8px);background-size:5px 5px;mix-blend-mode:multiply}
-#stage{height:100%;display:grid;grid-template-columns:minmax(0,4fr) minmax(280px,1.1fr);gap:clamp(18px,2vw,40px);padding:var(--safe)}
-.paper{position:relative;min-width:0;background:var(--paper);border:clamp(3px,.3vw,6px) solid var(--ink);box-shadow:clamp(9px,1vw,19px) clamp(9px,1vw,19px) 0 var(--ink);overflow:hidden;padding:clamp(36px,4.2vh,76px) clamp(25px,2.5vw,50px) clamp(22px,2.4vh,44px)}
-.print-head{position:absolute;left:2.4%;right:2.4%;top:2.1%;display:flex;justify-content:space-between;border-bottom:2px solid var(--ink);padding-bottom:.55%;font-weight:850;letter-spacing:.14em;font-size:clamp(11px,1vw,20px)}
+
+:root{
+  --paper:#f4eddc;--ink:#26221e;--night:#20242f;--pink:#ff48b0;
+  --blue:#0078bf;--green:#00a95c;--yellow:#ffe800;--orange:#ff6c2f;
+  --red:#f15060;--burgundy:#914e72;--teal:#00838a;--violet:#765ba7;
+  /* Zona segura de televisor: ni un trazo pega al borde del panel. */
+  --safe:clamp(28px,4vw,7.22vh);
+  /* Tinta de la ceremonia en curso. La cambia el receptor por tono. */
+  --tone:var(--pink);
+  /* Alto de la banda de ceremonia: lo que el tablero se encoge y lo que el
+     sello de la tirada sube para no quedarse debajo. */
+  --band:clamp(104px,16vh,18.15vh);
+}
+
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--night);color:var(--ink);font-family:Archivo,sans-serif}
+/* Trama de imprenta sobre todo el plató: sin ella la tele se ve digital. */
+body:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:radial-gradient(#000 .7px,transparent .8px);background-size:5px 5px;mix-blend-mode:multiply}
+
+#stage{height:100%;display:grid;grid-template-columns:minmax(0,4fr) minmax(280px,1.1fr);gap:clamp(18px,2vw,3.7vh);padding:var(--safe)}
+
+/* ── El póster ──────────────────────────────────────────────────────────── */
+
+.paper{
+  position:relative;min-width:0;display:flex;flex-direction:column;
+  background:var(--paper);border:clamp(3px,.3vw,0.56vh) solid var(--ink);
+  box-shadow:clamp(9px,1vw,1.76vh) clamp(9px,1vw,1.76vh) 0 var(--ink);
+  overflow:hidden;
+  padding:clamp(36px,4.2vh,7.04vh) clamp(25px,2.5vw,4.63vh) clamp(22px,2.4vh,4.07vh);
+}
+.print-head{position:absolute;left:2.4%;right:2.4%;top:2.1%;display:flex;justify-content:space-between;border-bottom:2px solid var(--ink);padding-bottom:.55%;font-weight:850;letter-spacing:.14em;font-size:clamp(11px,1vw,1.85vh)}
+/* Desregistro de plancha: dos marcas de registro en las esquinas, como en un
+   cartel mal calzado. Puro adorno, sin coste de pintado. */
+.misregister{position:absolute;width:clamp(14px,1.4vw,2.59vh);height:clamp(14px,1.4vw,2.59vh);pointer-events:none;opacity:.5}
+.misregister:before,.misregister:after{content:"";position:absolute;background:var(--ink)}
+.misregister:before{left:50%;top:0;bottom:0;width:2px;transform:translateX(-1px)}
+.misregister:after{top:50%;left:0;right:0;height:2px;transform:translateY(-1px)}
+.misregister.one{left:1.1%;bottom:1.4%}
+.misregister.two{right:1.1%;top:1.4%;opacity:.32}
+
 /* El tablero es un SVG con viewBox: mantiene la proporción de la retícula
    (8x8 en la partida completa), así que las casillas salen CUADRADAS como en
    el móvil en vez de estirarse al ancho del televisor. */
+.board-frame{position:relative;flex:1;min-height:0;transition:padding-bottom .3s ease-out}
+/* Con la banda puesta el tablero se ENCOGE en lugar de quedar tapado: el SVG
+   se recoloca solo y la mesa no pierde de vista ni la fila de abajo. */
+.paper.banded .board-frame{padding-bottom:var(--band)}
 .board{display:block;width:100%;height:100%}
 .cell-number{font-family:Archivo;font-weight:850;fill:var(--ink)}
 .cell-corner{font-family:Archivo;font-weight:850;fill:var(--ink);opacity:.62}
@@ -15,14 +54,162 @@
 .token-mark{font-family:Archivo;font-weight:900}
 /* La ficha de quien tiene el turno se distingue con un halo de tinta, no con
    un tamaño distinto: la escala la usa el salto y pelearían. */
+.token{transition:none}
+/* Rastro del recorrido: se imprime por donde ha pasado la ficha y se va. */
+.trail-dot{animation:trail 1.5s ease-out forwards}
+@keyframes trail{0%{opacity:.85;transform:scale(1)}100%{opacity:0;transform:scale(.4)}}
+/* Anillo de la casilla de quien juega: late despacio, no distrae. */
+.mark-ring{animation:markpulse 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes markpulse{0%,100%{opacity:.28}50%{opacity:.75}}
 
-.score{min-width:0;color:var(--paper);display:flex;flex-direction:column;align-items:center;text-align:center;padding:2vh 0}.score-kicker,.eyebrow{font-weight:850;letter-spacing:.2em;font-size:clamp(12px,1vw,21px)}.player-mark{width:clamp(68px,7vw,134px);height:clamp(68px,7vw,134px);aspect-ratio:1;border:clamp(4px,.4vw,8px) solid var(--paper);border-radius:50%;display:grid;place-items:center;margin:2.8vh 0 1.5vh;background:var(--blue);font:clamp(34px,4vw,80px)/1 Alfa;box-shadow:clamp(7px,.7vw,13px) clamp(7px,.7vw,13px) 0 var(--ink)}h1{font:clamp(26px,2.8vw,58px)/.98 Alfa;margin:.3em 0;overflow-wrap:anywhere}.stamp{border:clamp(2px,.2vw,4px) solid currentColor;padding:.35em .75em;font-weight:900;letter-spacing:.12em;transform:rotate(-2deg);font-size:clamp(13px,1.15vw,24px)}.dice{width:clamp(82px,8vw,155px);height:clamp(82px,8vw,155px);aspect-ratio:1;background:var(--paper);color:var(--ink);border:clamp(4px,.35vw,7px) solid var(--ink);box-shadow:clamp(7px,.65vw,13px) clamp(7px,.65vw,13px) 0 var(--pink);display:grid;place-items:center;margin:3vh 0;font:clamp(38px,4.4vw,90px)/1 Alfa;transform:rotate(2deg)}.dice.roll{animation:dice .48s steps(4)}
-.ranking{list-style:none;width:100%;margin:0;padding:0;border-top:2px solid #f4eddc55}.ranking li{display:grid;grid-template-columns:2em 1fr auto;align-items:center;gap:.5em;padding:.55em .2em;border-bottom:1px solid #f4eddc44;text-align:left;font-weight:760;font-size:clamp(12px,1vw,21px)}.rank-copy{min-width:0;display:flex;flex-direction:column;gap:.12em}.rank-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rank-copy small{color:var(--yellow);font-size:.68em;letter-spacing:.08em}
-.ranking .dot{width:1.2em;height:1.2em;border:2px solid var(--paper);border-radius:50%;display:grid;place-items:center;font-size:.65em}.effects{display:flex;flex-wrap:wrap;gap:.4em;justify-content:center;margin-top:1.4vh}.effects span{border:2px solid var(--red);color:var(--red);padding:.25em .45em;font-weight:850;font-size:clamp(10px,.8vw,16px);transform:rotate(-2deg)}.remote-note{margin-top:auto;font-size:clamp(9px,.7vw,15px);letter-spacing:.15em;font-weight:800;opacity:.65}
-.takeover{position:absolute;inset:0;z-index:10;display:grid;place-items:center;background:#20242ff2;padding:var(--safe)}.takeover[hidden]{display:none}.takeover-sheet,.ceremony-copy,.privacy-poster,.connection-poster{position:relative;width:min(78vw,1280px);background:var(--paper);border:clamp(4px,.45vw,9px) solid var(--ink);box-shadow:clamp(13px,1.3vw,26px) clamp(13px,1.3vw,26px) 0 var(--pink);padding:clamp(44px,6vw,115px);text-align:center}.takeover h2{font:clamp(46px,7vw,140px)/.92 Alfa;margin:.18em 0}.takeover p{font-weight:650;font-size:clamp(23px,2.5vw,50px);line-height:1.25;margin:.6em auto 0;max-width:28em}.card .takeover-sheet{transform:rotate(-.8deg)}.card .eyebrow{color:var(--red)}.ceremony{background:var(--red)}.ceremony-copy{background:transparent;color:var(--paper);border-color:var(--paper);box-shadow:16px 16px 0 var(--ink)}.ceremony-copy h2{font-size:clamp(58px,9vw,180px)}.ceremony-ranking{list-style:none;width:min(52vw,900px);margin:clamp(24px,3vh,48px) auto 0;padding:0;border-top:clamp(2px,.18vw,4px) solid currentColor}.ceremony-ranking li{display:grid;grid-template-columns:2em 1fr auto;gap:1em;align-items:center;padding:.48em .25em;border-bottom:2px solid #f4eddc66;text-align:left;font-size:clamp(18px,1.5vw,31px)}.ceremony-ranking strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.privacy{background:var(--night)}.privacy-poster{width:min(65vw,1050px);transform:rotate(-1.5deg);box-shadow:16px 16px 0 var(--blue)}.goose,.cast-glyph{font:clamp(50px,8vw,150px)/1 Alfa;color:var(--blue)}.connection{background:var(--night)}.connection-poster{width:min(62vw,1000px);box-shadow:16px 16px 0 var(--pink)}.connection h2{font-size:clamp(42px,6vw,120px)}.toast{position:absolute;z-index:30;left:50%;bottom:var(--safe);transform:translateX(-50%) rotate(-1deg);background:var(--pink);color:var(--ink);border:4px solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:.65em 1.2em;font:clamp(18px,2vw,38px)/1 Alfa}
-@keyframes dice{0%{transform:rotate(2deg) scale(1)}40%{transform:rotate(-16deg) scale(1.18)}75%{transform:rotate(11deg) scale(.94)}100%{transform:rotate(2deg) scale(1)}}
-@media (max-aspect-ratio:1.45/1){#stage{grid-template-columns:minmax(0,3.2fr) minmax(230px,1fr);gap:18px}.paper{padding-left:24px;padding-right:24px}.ranking li:nth-child(n+6){display:none}}
+/* ── Los dados ──────────────────────────────────────────────────────────── */
+
+/* Velo bajo los dados: oscurece el tablero lo justo para que el numeral se
+   lea desde el sofá. Ni tapa el tablero ni tiñe la pantalla de un color. */
+.dice-scrim{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 46%,#20242fee 0%,#20242fdd 30%,#20242f8c 58%,#20242f26 80%,transparent 94%);animation:fade .22s ease-out}
+.dice-scrim[hidden]{display:none}
+
+.dice-stage{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;pointer-events:none}
+.dice-stage[hidden]{display:none}
+.dice-kicker{color:var(--paper);font-weight:850;letter-spacing:.34em;font-size:clamp(13px,1.15vw,2.22vh);opacity:.8;margin-bottom:clamp(10px,1.4vh,2.04vh)}
+.dice-faces{display:flex;gap:clamp(14px,1.6vw,3.15vh)}
+.dice-total{margin-top:clamp(8px,1.2vh,1.85vh);font:clamp(40px,5vw,9.63vh)/1 Alfa;color:var(--pink);opacity:0}
+.dice-stage.settled .dice-total{opacity:1;animation:stamp .22s cubic-bezier(.2,1.5,.4,1)}
+
+/* Cara de dado, calcada del móvil (`DieFace`): papel, filete de tinta, sombra
+   dura desplazada y el NUMERAL en Alfa. Nada de puntos: a tres metros un 6 de
+   puntos y un 5 se confunden, un numeral no. */
+.die{
+  width:var(--die);height:var(--die);display:grid;place-items:center;
+  background:var(--paper);color:var(--ink);
+  border:calc(var(--die) * .036) solid var(--ink);
+  box-shadow:calc(var(--die) * .048) calc(var(--die) * .048) 0 var(--ink);
+  font:calc(var(--die) * .66)/1 Alfa;
+}
+.dice-faces .die{--die:clamp(96px,9.5vw,17.59vh)}
+.dice-stage.rolling .dice-faces .die:nth-child(1){animation:tumbleA .42s ease-in-out infinite}
+.dice-stage.rolling .dice-faces .die:nth-child(2){animation:tumbleB .38s ease-in-out infinite}
+.dice-stage.settled .dice-faces .die:nth-child(1){animation:stamp .26s cubic-bezier(.2,1.5,.4,1);transform:rotate(-2.5deg)}
+.dice-stage.settled .dice-faces .die:nth-child(2){animation:stamp .26s cubic-bezier(.2,1.5,.4,1) 60ms both;transform:rotate(2deg)}
+/* El encogido: los dados se van HACIA la esquina donde queda el sello, así que
+   la mesa entiende que el resultado no se ha perdido. */
+.dice-stage.stowing{animation:stow var(--stow,260ms) cubic-bezier(.5,0,.75,0) forwards}
+@keyframes tumbleA{0%,100%{transform:rotate(-9deg) scale(1)}50%{transform:rotate(11deg) scale(1.06)}}
+@keyframes tumbleB{0%,100%{transform:rotate(8deg) scale(1.04)}50%{transform:rotate(-12deg) scale(.96)}}
+@keyframes stamp{0%{transform:scale(1.5) rotate(-6deg);opacity:.2}100%{transform:scale(1) rotate(0)}}
+@keyframes stow{0%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(28%,150%) scale(.3);opacity:0}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* EL SELLO DE LA ÚLTIMA TIRADA: vive en la esquina del póster hasta la
+   siguiente tirada. Entra encogiendo desde 2.4x, igual que en el móvil. */
+.roll-slot{position:absolute;right:0;bottom:0;transition:bottom .3s ease-out;background:var(--paper);border:clamp(2px,.22vw,0.46vh) solid var(--ink);box-shadow:clamp(5px,.5vw,0.93vh) clamp(5px,.5vw,0.93vh) 0 var(--tone);padding:.45em .7em .55em;transform:rotate(-1.4deg);text-align:center}
+.roll-slot[hidden]{display:none}
+/* Con la banda puesta el sello sube con el tablero en vez de esconderse. */
+.paper.banded .roll-slot{bottom:var(--band)}
+.roll-slot.arriving{animation:shrinkin .4s cubic-bezier(.22,1,.28,1)}
+@keyframes shrinkin{0%{transform:scale(2.4) rotate(-8deg);opacity:0}45%{opacity:1}100%{transform:scale(1) rotate(-1.4deg)}}
+.roll-kicker{font-weight:850;letter-spacing:.2em;font-size:clamp(9px,.72vw,1.39vh);opacity:.6}
+.roll-line{display:flex;align-items:center;gap:clamp(5px,.5vw,0.93vh);margin-top:.35em}
+.roll-faces{display:flex;gap:clamp(4px,.4vw,0.74vh)}
+.roll-faces .die{--die:clamp(26px,2.4vw,4.63vh)}
+.roll-total{font:clamp(22px,2.1vw,4.07vh)/1 Alfa;color:var(--tone);margin-left:.12em}
+
+/* ── La banda de ceremonia ──────────────────────────────────────────────── */
+
+.banner{position:absolute;left:0;right:0;bottom:0;padding:0 clamp(18px,2vw,4.07vh) clamp(14px,1.6vh,2.78vh);pointer-events:none;z-index:8}
+.banner[hidden]{display:none}
+.banner-sheet{
+  display:flex;align-items:center;gap:clamp(12px,1.3vw,2.41vh);
+  background:var(--paper);border:clamp(3px,.3vw,0.56vh) solid var(--ink);
+  box-shadow:clamp(7px,.7vw,1.3vh) clamp(7px,.7vw,1.3vh) 0 var(--tone);
+  padding:clamp(10px,1.1vh,1.85vh) clamp(16px,1.6vw,2.96vh);
+  transform:rotate(-.7deg);animation:bandin .34s cubic-bezier(.2,1.15,.3,1);
+}
+@keyframes bandin{0%{transform:translateY(140%) rotate(-3deg)}100%{transform:translateY(0) rotate(-.7deg)}}
+.banner-glyph{flex:none;width:clamp(40px,3.5vw,6.67vh);height:clamp(40px,3.5vw,6.67vh)}
+.banner-copy{min-width:0}
+.banner-type{font-weight:850;letter-spacing:.22em;font-size:clamp(10px,.78vw,1.48vh);color:var(--tone)}
+.banner-title{font:clamp(24px,2.5vw,4.81vh)/.98 Alfa;margin-top:.08em;overflow-wrap:anywhere}
+.banner-body{font-weight:700;font-size:clamp(13px,1.05vw,2.04vh);letter-spacing:.05em;margin-top:.2em;opacity:.78;overflow-wrap:anywhere}
+
+/* ── El marcador ────────────────────────────────────────────────────────── */
+
+.score{min-width:0;color:var(--paper);display:flex;flex-direction:column;align-items:center;text-align:center;padding:2vh 0}
+.score-kicker,.eyebrow{font-weight:850;letter-spacing:.2em;font-size:clamp(12px,1vw,1.94vh)}
+.player-mark{width:clamp(68px,7vw,12.41vh);height:clamp(68px,7vw,12.41vh);aspect-ratio:1;border:clamp(4px,.4vw,0.74vh) solid var(--paper);border-radius:50%;display:grid;place-items:center;margin:2.2vh 0 1.4vh;background:var(--blue);font:clamp(34px,4vw,7.41vh)/1 Alfa;box-shadow:clamp(7px,.7vw,1.2vh) clamp(7px,.7vw,1.2vh) 0 var(--ink)}
+.player-mark.handoff{animation:stamp .34s cubic-bezier(.2,1.5,.4,1)}
+h1{font:clamp(26px,2.8vw,5.37vh)/.98 Alfa;margin:.28em 0;overflow-wrap:anywhere}
+.score-tags{display:flex;flex-wrap:wrap;gap:.5em;justify-content:center}
+.stamp{border:clamp(2px,.2vw,0.37vh) solid currentColor;padding:.35em .75em;font-weight:900;letter-spacing:.12em;transform:rotate(-2deg);font-size:clamp(13px,1.15vw,2.22vh)}
+.stamp.square{transform:rotate(1.6deg);color:var(--yellow)}
+.togo{margin-top:1.1vh;font-weight:850;letter-spacing:.16em;font-size:clamp(10px,.82vw,1.57vh);opacity:.72}
+
+.ranking{list-style:none;width:100%;margin:2.2vh 0 0;padding:0;border-top:2px solid #f4eddc55}
+.ranking li{display:grid;grid-template-columns:1.7em 1fr auto;align-items:center;gap:.5em;padding:.5em .2em .55em;border-bottom:1px solid #f4eddc44;text-align:left;font-weight:760;font-size:clamp(12px,1vw,1.94vh)}
+.ranking li.is-current{background:#f4eddc12}
+.rank-copy{min-width:0;display:flex;flex-direction:column;gap:.2em}
+.rank-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-copy small{color:var(--yellow);font-size:.68em;letter-spacing:.08em}
+/* Barra de avance: de un vistazo se ve quién va ganando sin leer números. */
+.rank-bar{height:clamp(4px,.35vw,0.74vh);background:#f4eddc2e;position:relative;overflow:hidden}
+.rank-bar i{position:absolute;left:0;top:0;bottom:0;display:block;transition:width .5s ease-out}
+.ranking .dot{width:1.5em;height:1.5em;border:2px solid var(--paper);border-radius:50%;display:grid;place-items:center;font-size:.7em;font-weight:900}
+.effects{display:flex;flex-wrap:wrap;gap:.4em;justify-content:center;margin-top:1.4vh}
+.effects span{border:2px solid var(--red);color:var(--red);padding:.25em .45em;font-weight:850;font-size:clamp(10px,.8vw,1.48vh);transform:rotate(-2deg)}
+.remote-note{margin-top:auto;font-size:clamp(9px,.7vw,1.39vh);letter-spacing:.15em;font-weight:800;opacity:.65}
+
+/* ── Hojas a pantalla completa ──────────────────────────────────────────── */
+/* Solo dos cosas se comen la pantalla entera: el RETO (lo tiene que leer toda
+   la mesa) y el final de la partida. Todo lo demás va en la banda. */
+
+.takeover{position:absolute;inset:0;z-index:10;display:grid;place-items:center;background:#20242ff2;padding:var(--safe)}
+.takeover[hidden]{display:none}
+.takeover-sheet,.ceremony-copy,.privacy-poster,.connection-poster{position:relative;width:min(78vw,118.52vh);background:var(--paper);border:clamp(4px,.45vw,0.83vh) solid var(--ink);box-shadow:clamp(13px,1.3vw,2.41vh) clamp(13px,1.3vw,2.41vh) 0 var(--pink);padding:clamp(38px,5vw,8.89vh);text-align:center}
+.takeover h2{font:clamp(46px,7vw,12.96vh)/.92 Alfa;margin:.18em 0}
+.takeover p{font-weight:650;font-size:clamp(23px,2.5vw,4.63vh);line-height:1.25;margin:.6em auto 0;max-width:28em}
+.card .takeover-sheet{transform:rotate(-.8deg);animation:cardin .36s cubic-bezier(.2,1.1,.3,1)}
+@keyframes cardin{0%{transform:scale(.86) rotate(-4deg);opacity:0}100%{transform:scale(1) rotate(-.8deg);opacity:1}}
+.card .eyebrow{color:var(--red)}
+.card-head{display:flex;align-items:center;justify-content:center;gap:1em;flex-wrap:wrap}
+.card-sober{border:3px solid var(--green);color:var(--green);padding:.2em .5em;font-weight:900;letter-spacing:.14em;font-size:clamp(13px,1.1vw,2.13vh);transform:rotate(2deg)}
+.card-sober[hidden]{display:none}
+.card-who{display:inline-flex;align-items:center;gap:.6em;margin-top:clamp(20px,2.6vh,4.07vh);border:clamp(3px,.28vw,0.56vh) solid var(--ink);padding:.35em .9em .4em .4em}
+.card-who[hidden]{display:none}
+.card-who-mark{width:1.9em;height:1.9em;border-radius:50%;border:3px solid var(--ink);display:grid;place-items:center;font-family:Alfa;font-size:clamp(18px,1.7vw,3.33vh)}
+.card-who-name{font:clamp(22px,2.1vw,4.07vh)/1 Alfa;letter-spacing:.02em}
+.card-foot{margin-top:clamp(16px,2vh,3.15vh);font-weight:850;letter-spacing:.2em;font-size:clamp(11px,.95vw,1.85vh);opacity:.55}
+
+.ceremony{background:var(--red)}
+.ceremony-copy{background:transparent;color:var(--paper);border-color:var(--paper);box-shadow:clamp(9px,1vw,1.76vh) clamp(9px,1vw,1.76vh) 0 var(--ink)}
+.ceremony-copy h2{font-size:clamp(58px,9vw,16.67vh)}
+/* El nombre del campeón es el titular de la noche: va en Alfa y grande, no en
+   el cuerpo de texto que usan las demás hojas. */
+.ceremony-copy p{font:clamp(30px,3.6vw,6.85vh)/1 Alfa;letter-spacing:.02em;margin-top:.35em}
+/* Escarapela de fondo tras el póster del campeón. */
+.burst{position:absolute;inset:0;background:repeating-conic-gradient(from 0deg at 50% 50%,#ffffff14 0deg 9deg,transparent 9deg 18deg);animation:spin 42s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ceremony-ranking{list-style:none;width:min(52vw,83.33vh);margin:clamp(24px,3vh,4.44vh) auto 0;padding:0;border-top:clamp(2px,.18vw,0.37vh) solid currentColor}
+.ceremony-ranking[hidden]{display:none}
+.ceremony-ranking li{display:grid;grid-template-columns:2em 1fr auto;gap:1em;align-items:center;padding:.48em .25em;border-bottom:2px solid #f4eddc66;text-align:left;font-size:clamp(18px,1.5vw,2.87vh)}
+.ceremony-ranking strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.privacy{background:var(--night)}
+.privacy-poster{width:min(65vw,97.22vh);transform:rotate(-1.5deg);box-shadow:clamp(9px,1vw,1.76vh) clamp(9px,1vw,1.76vh) 0 var(--blue)}
+.goose,.cast-glyph{font:clamp(50px,8vw,13.89vh)/1 Alfa;color:var(--blue)}
+.connection{background:var(--night)}
+.connection-poster{width:min(62vw,92.59vh);box-shadow:clamp(9px,1vw,1.76vh) clamp(9px,1vw,1.76vh) 0 var(--pink)}
+.connection h2{font-size:clamp(42px,6vw,11.11vh)}
+
+.private-note{position:absolute;z-index:9;right:var(--safe);top:calc(var(--safe) + 1.2vw);width:min(22vw,39.81vh);transform:rotate(-.7deg);background:var(--paper);color:var(--ink);border:clamp(3px,.3vw,0.56vh) solid var(--ink);box-shadow:clamp(8px,.8vw,1.39vh) clamp(8px,.8vw,1.39vh) 0 var(--blue);padding:.7em .9em;text-align:center;font:clamp(15px,1.35vw,2.59vh)/1.05 Alfa;letter-spacing:.03em}
+.private-note[hidden]{display:none}
+
+/* Televisores 16:10 y proyectores cuadrados: el marcador adelgaza antes que
+   comerse el tablero, y la clasificación se queda en los cinco primeros. */
+@media (max-aspect-ratio:1.45/1){
+  #stage{grid-template-columns:minmax(0,3.2fr) minmax(230px,1fr);gap:18px}
+  .paper{padding-left:24px;padding-right:24px}
+  .ranking li:nth-child(n+6){display:none}
+}
+
 body.reduced *,body.reduced *:before,body.reduced *:after{animation:none!important;transition:none!important}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
-
-.private-note{position:absolute;z-index:9;right:var(--safe);bottom:calc(var(--safe) + 1.2vw);width:min(22vw,430px);transform:rotate(-.7deg);background:var(--paper);color:var(--ink);border:clamp(3px,.3vw,6px) solid var(--ink);box-shadow:clamp(8px,.8vw,15px) clamp(8px,.8vw,15px) 0 var(--blue);padding:.7em .9em;text-align:center;font:clamp(15px,1.35vw,28px)/1.05 Alfa;letter-spacing:.03em}

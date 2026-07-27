@@ -8,13 +8,28 @@
   const U = ART.U;
   const colors = ['#0078bf','#00a95c','#ffe800','#ff6c2f','#f15060','#914e72','#00838a','#765ba7'];
   const statusLabels = {pozo:'POZO',carcel:'CÁRCEL',posada:'POSADA'};
+  const TONE = {bien:'var(--green)', mal:'var(--red)', neutro:'var(--pink)'};
+
   let state = null;
   const guard = new OcaCastProtocol.CueGuard();
   const authority = new OcaCastProtocol.SenderAuthority();
   let context = null;
   const $ = id => document.getElementById(id);
-  const hopping = new Set();
   const tokenNodes = new Map();
+
+  /// Firma del tablero impreso. Repintar 63 casillas en cada snapshot es caro
+  /// en un Chromecast de los baratos y no cambia nada: solo se reimprime la
+  /// plancha cuando cambia el tablero de verdad.
+  let boardSignature = '';
+  /// Ficha que está andando AHORA (no se la puede repintar debajo).
+  let hopActive = null;
+  /// Salto ya anunciado pero todavía en cola: la ficha se queda en su casilla
+  /// de origen aunque el snapshot traiga ya la de destino.
+  let hopHold = null;
+  /// Carta y banda esperando a que la escena en curso termine.
+  let pendingOverlays = false;
+  let lastRoll = [];
+  let shownTurn = '';
 
   function send(senderId, type, extra={}) {
     if (!context || !senderId) return;
@@ -65,6 +80,37 @@
     send(event.senderId, 'ack', {sequence: guard.lastSequence});
   }
 
+  // --- la escena ----------------------------------------------------------
+  //
+  // El móvil manda los hechos de un turno en el MISMO instante: el resultado
+  // del dado, el recorrido de la ficha, la ceremonia y el snapshot ya con la
+  // posición final llegan pisándose. Pintarlos según llegan es lo que hacía
+  // que la mesa no viera nunca andar a la ficha. Aquí se reparten en el tiempo
+  // y en el orden dramático del móvil: DADO → SALTO → lo que haya pasado.
+
+  const steps = [];
+  let running = false;
+  const reduced = () => !!(state && state.accessibility && state.accessibility.reducedMotion);
+  const busy = () => running || steps.length > 0;
+
+  function schedule(action, holdMs) {
+    steps.push({action, holdMs});
+    if (!running) pump();
+  }
+  function pump() {
+    const step = steps.shift();
+    if (!step) {
+      running = false;
+      if (pendingOverlays) renderOverlays();
+      return;
+    }
+    running = true;
+    step.action();
+    const ms = reduced() ? 0 : step.holdMs;
+    if (ms <= 0) { pump(); return; }
+    setTimeout(pump, ms);
+  }
+
   // --- dibujo -------------------------------------------------------------
 
   function el(tag, attrs, parent) {
@@ -77,6 +123,20 @@
     const node = el('text', attrs, parent);
     node.textContent = value;
     return node;
+  }
+  function div(cls, value, parent) {
+    const node = document.createElement('div');
+    node.className = cls;
+    if (value !== undefined) node.textContent = value;
+    if (parent) parent.append(node);
+    return node;
+  }
+  /// `style.setProperty` no existe en todos los entornos donde se prueba esto;
+  /// nunca debe tumbar un pintado por un color.
+  function setVar(node, name, value) {
+    if (node && node.style && typeof node.style.setProperty === 'function') {
+      node.style.setProperty(name, value);
+    }
   }
 
   function squareType(n, board) {
@@ -129,6 +189,10 @@
 
   function renderBoard() {
     const board = state.board;
+    const signature = `${board.goal}|${board.visualTheme}|${JSON.stringify(board.specialSquares)}`;
+    if (signature === boardSignature) return;
+    boardSignature = signature;
+
     const geo = ART.geometryFor(board.goal);
     const theme = ART.themeFor(board.visualTheme);
     const svg = $('board');
@@ -171,32 +235,51 @@
     }
   }
 
+  /// Anillo sobre la casilla de quien juega: desde el sofá se localiza sin
+  /// buscar la ficha entre las de los demás.
+  function renderMarks() {
+    const layer = $('board-marks');
+    layer.replaceChildren();
+    const current = state.players.find(p => p.publicId === state.turn.currentPlayerId);
+    if (!current) return;
+    const c = ART.centerOf(cellByNumber(positionOf(current)));
+    el('circle', {
+      cx: c.x, cy: c.y, r: U * 0.44, class: 'mark-ring',
+      fill: 'none', stroke: colors[current.inkIndex] || colors[0], 'stroke-width': 6,
+    }, layer);
+  }
+
   /// Las fichas viven en su propia capa para poder moverse entre casillas sin
   /// repintar el póster de debajo.
+  const positionOf = (player) =>
+    hopHold && hopHold.id === player.publicId ? hopHold.position : player.position;
+
   function renderTokens() {
     // Repintar durante un salto lo cortaría en seco: el snapshot con la
     // posición final llega pisándole los talones al `piece_path`.
-    if (hopping.size) return;
+    if (hopActive) return;
     const layer = $('board-tokens');
     layer.replaceChildren();
     tokenNodes.clear();
 
     const byCell = new Map();
     for (const p of state.players) {
-      const list = byCell.get(p.position) || [];
+      const cell = positionOf(p);
+      const list = byCell.get(cell) || [];
       list.push(p);
-      byCell.set(p.position, list);
+      byCell.set(cell, list);
     }
-    for (const [, list] of byCell) {
+    for (const [cell, list] of byCell) {
       const {scale} = crowdLayout(list.length);
       list.forEach((p, i) => {
         const g = el('g', {class: 'token' + (p.publicId === state.turn.currentPlayerId ? ' current' : '')}, layer);
         buildToken(g, p, scale);
-        const at = restingSpot(p.position, i, list.length);
+        const at = restingSpot(cell, i, list.length);
         setTokenAt(g, at.x, at.y, 1);
         tokenNodes.set(p.publicId, g);
       });
     }
+    renderMarks();
   }
 
   function buildToken(g, player, scale) {
@@ -251,29 +334,92 @@
     g.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${(2 - squash).toFixed(3)},${squash.toFixed(3)})`);
   }
 
-  function render() {
-    if (!state) return;
-    $('connection').hidden = true;
-    document.body.classList.toggle('reduced', !!state.accessibility?.reducedMotion);
-    $('edition').textContent = state.board.title.toUpperCase();
-    renderBoard();
-    renderTokens();
+  // --- los dados ----------------------------------------------------------
+  //
+  // Ruedan grandes SOBRE el tablero, con un velo oscuro debajo para que el
+  // numeral se lea, y al asentar encogen hasta el sello de la esquina. Nunca
+  // hay una hoja a pantalla completa: lo siguiente que la mesa quiere ver es
+  // la ficha andando.
 
-    const current=state.players.find(p=>p.publicId===state.turn.currentPlayerId)||state.players[0];
-    if(current){$('player-mark').textContent=current.symbol;$('player-mark').style.background=colors[current.inkIndex];$('player-name').textContent=(current.displayName||`JUGADOR ${current.symbol}`).toUpperCase()}
-    $('round').textContent=`RONDA ${state.turn.round}`;
-    const dice=state.turn.dice||[];$('dice').textContent=dice.length?dice.join(' + '):'·';$('dice').setAttribute('aria-label',dice.length?`Tirada ${dice.join(' y ')}`:'Sin tirada');
-    const ranking=[...state.players].sort((a,b)=>b.position-a.position);
-    $('ranking').innerHTML=ranking.map((p,i)=>{
-      const statuses=(p.statuses||[]).map(s=>statusLabels[s]).filter(Boolean).join(' · ');
-      return `<li><span>${i+1}</span><span class="rank-copy"><strong>${escapeHtml(p.displayName||`Jugador ${p.symbol}`)}</strong>${statuses?`<small>${statuses}</small>`:''}</span><span class="dot" style="background:${colors[p.inkIndex]}">${p.symbol}</span></li>`;
-    }).join('');
-    $('effects').innerHTML=(state.effects||[]).slice(0,4).map(e=>`<span>${escapeHtml(e)}</span>`).join('');
-    const card=state.publicCard;$('card').hidden=!card;if(card){$('card-suit').textContent=card.nonAlcohol?`${card.suit} · SIN ALCOHOL`:card.suit;$('card-title').textContent=card.title;$('card-body').textContent=card.body}
-    const ceremony=state.publicCeremony;$('ceremony').hidden=!ceremony;if(ceremony){$('ceremony-type').textContent=(ceremony.type||'').toUpperCase();$('ceremony-title').textContent=ceremony.title;$('ceremony-body').textContent=ceremony.body||''}
-    const finalRanking=$('ceremony-ranking');finalRanking.hidden=ceremony?.type!=='victoria';finalRanking.innerHTML=ceremony?.type==='victoria'?ranking.slice(0,8).map((p,i)=>`<li><span>${i+1}</span><strong>${escapeHtml(p.displayName||`Jugador ${p.symbol}`)}</strong><span>${p.position}</span></li>`).join(''):'';
-    $('private-note').hidden=!state.secretDecision || state.privacyCover;
-    $('privacy').hidden=!state.privacyCover;
+  let diceTimer = null;
+  const faceRoll = () => 1 + Math.floor(Math.random() * 6);
+  const sum = (values) => values.reduce((a, b) => a + b, 0);
+
+  function paintFaces(container, values) {
+    container.replaceChildren();
+    for (const value of values) div('die', String(value), container);
+  }
+  function stopRolling() {
+    if (diceTimer !== null) { clearTimeout(diceTimer); diceTimer = null; }
+  }
+
+  function startRolling() {
+    stopRolling();
+    const stage = $('dice-stage');
+    $('dice-scrim').hidden = false;
+    stage.hidden = false;
+    stage.classList.remove('settled');
+    stage.classList.remove('stowing');
+    stage.classList.add('rolling');
+    $('dice-total').textContent = '';
+    paintFaces($('dice-faces'), [faceRoll(), faceRoll()]);
+    if (reduced()) return;
+    // Intervalos CRECIENTES: el dado de madera pierde impulso, como en el
+    // móvil. Los tiempos vienen de board_art para no separarse de Dart.
+    const beats = ART.diceBeats();
+    let i = 1;
+    const next = () => {
+      paintFaces($('dice-faces'), [faceRoll(), faceRoll()]);
+      i++;
+      if (i >= beats.length) { diceTimer = null; return; }
+      diceTimer = setTimeout(next, beats[i] - beats[i - 1]);
+    };
+    diceTimer = setTimeout(next, beats[0]);
+  }
+
+  function settleDice(dice) {
+    stopRolling();
+    const values = (dice && dice.length ? dice : lastRoll).slice(0, 4);
+    if (!values.length) return;
+    lastRoll = values;
+    const stage = $('dice-stage');
+    $('dice-scrim').hidden = false;
+    stage.hidden = false;
+    stage.classList.remove('rolling');
+    stage.classList.remove('stowing');
+    stage.classList.add('settled');
+    paintFaces($('dice-faces'), values);
+    $('dice-total').textContent = String(sum(values));
+  }
+
+  /// Los dados se van encogiendo HACIA la esquina y el sello aparece allí: el
+  /// resultado no se pierde, se guarda. Es el mismo gesto que en el móvil.
+  function stowDice() {
+    const stage = $('dice-stage');
+    $('dice-scrim').hidden = true;
+    // El encogido dura lo que dice board_art, no lo que diga la hoja de estilo:
+    // el móvil cuenta con ese tramo para volver a habilitar TIRAR.
+    setVar(stage, '--stow', `${ART.DICE_STOW_MS}ms`);
+    stage.classList.add('stowing');
+    paintRollSlot(true);
+    setTimeout(() => {
+      stage.hidden = true;
+      stage.classList.remove('stowing');
+      stage.classList.remove('settled');
+    }, reduced() ? 0 : ART.DICE_STOW_MS);
+  }
+
+  function paintRollSlot(animate) {
+    const slot = $('roll-slot');
+    if (!lastRoll.length) { slot.hidden = true; return; }
+    const current = state && state.players.find(p => p.publicId === state.turn.currentPlayerId);
+    // Tinta de quien tiró: el sello se lee de un vistazo sin buscar el nombre.
+    setVar(slot, '--tone', colors[current ? current.inkIndex : 0] || colors[0]);
+    paintFaces($('roll-faces'), lastRoll);
+    $('roll-total').textContent = String(sum(lastRoll));
+    slot.hidden = false;
+    slot.classList.toggle('arriving', !!animate && !reduced());
+    if (animate) setTimeout(() => slot.classList.remove('arriving'), 420);
   }
 
   // --- el salto de la ficha ------------------------------------------------
@@ -282,28 +428,41 @@
     ? requestAnimationFrame(cb)
     : setTimeout(cb, 16));
 
+  /// Huella de tinta por donde ha pasado la ficha. Se desvanece sola con CSS:
+  /// marca el recorrido sin dejar el tablero sucio.
+  function dropTrail(position, ink) {
+    if (reduced()) return;
+    const c = ART.centerOf(cellByNumber(position));
+    el('circle', {cx: c.x, cy: c.y, r: U * 0.1, fill: ink, opacity: 0.85, class: 'trail-dot'}, $('board-trail'));
+  }
+
   function playHop(payload) {
     const playerId = state?.turn?.currentPlayerId;
     const node = tokenNodes.get(playerId);
     const segments = ART.hopPlanFor(payload.from, payload.path, payload.to);
-    if (!node || !segments.length) return;
-    if (state.accessibility?.reducedMotion) return;
+    const finish = () => {
+      hopActive = null;
+      hopHold = null;
+      $('board-trail').replaceChildren();
+      if (state) renderTokens();
+    };
+    if (!node || !segments.length || reduced()) { finish(); return; }
 
-    hopping.add(playerId);
+    const player = state.players.find(p => p.publicId === playerId);
+    const ink = colors[player ? player.inkIndex : 0] || colors[0];
+    hopActive = playerId;
     const total = ART.hopDuration(segments);
     const started = Date.now();
-    const finish = () => {
-      hopping.delete(playerId);
-      renderTokens();
-    };
+    let printed = -1;
     const frame = () => {
       const t = Date.now() - started;
       if (t >= total) { finish(); return; }
-      let acc = 0, seg = segments[0];
-      for (const s of segments) {
-        if (t < acc + s.ms) { seg = s; break; }
-        acc += s.ms;
+      let acc = 0, seg = segments[0], index = 0;
+      for (let i = 0; i < segments.length; i++) {
+        if (t < acc + segments[i].ms) { seg = segments[i]; index = i; break; }
+        acc += segments[i].ms;
       }
+      if (index !== printed) { printed = index; dropTrail(seg.from, ink); }
       const u = Math.min(1, Math.max(0, (t - acc) / seg.ms));
       const a = ART.centerOf(cellByNumber(seg.from));
       const b = ART.centerOf(cellByNumber(seg.to));
@@ -319,17 +478,170 @@
     raf(frame);
   }
 
-  function animateCue(type,payload){
-    if(type==='dice_started'||type==='dice_result'){$('dice').classList.remove('roll');void $('dice').offsetWidth;$('dice').classList.add('roll');if(payload.dice)$('dice').textContent=payload.dice.join(' + ')}
-    if(type==='piece_path'){playHop(payload)}
-    if(type==='ceremony_closed'){$('ceremony').hidden=true}
-    if(type==='privacy_cover_changed'){
-      $('privacy').hidden=!payload.covered;
-      if(payload.covered)$('private-note').hidden=true;
+  // --- marcador y hojas ---------------------------------------------------
+
+  function renderScore() {
+    const current = state.players.find(p => p.publicId === state.turn.currentPlayerId) || state.players[0];
+    if (current) {
+      const mark = $('player-mark');
+      mark.textContent = current.symbol;
+      mark.style.background = colors[current.inkIndex];
+      $('player-name').textContent = (current.displayName || `JUGADOR ${current.symbol}`).toUpperCase();
+      const key = `${current.publicId}|${state.turn.round}`;
+      if (key !== shownTurn) {
+        shownTurn = key;
+        mark.classList.toggle('handoff', !reduced());
+        setTimeout(() => mark.classList.remove('handoff'), 400);
+      }
+      const at = positionOf(current);
+      const left = Math.max(0, state.board.goal - at);
+      $('square').textContent = `CASILLA ${at}`;
+      $('togo').textContent = left === 0
+        ? 'HA LLEGADO AL JARDÍN'
+        : `FALTAN ${left} PARA EL JARDÍN`;
     }
-    if(type==='turn_started'||type==='game_finished'){const toast=$('toast');toast.textContent=type==='game_finished'?'HAY CAMPEÓN':'CAMBIO DE TURNO';toast.hidden=false;setTimeout(()=>toast.hidden=true,1200)}
+    $('round').textContent = `RONDA ${state.turn.round}`;
+
+    const goal = state.board.goal || 63;
+    const ranking = [...state.players].sort((a, b) => b.position - a.position);
+    $('ranking').innerHTML = ranking.map((p, i) => {
+      const statuses = (p.statuses || []).map(s => statusLabels[s]).filter(Boolean).join(' · ');
+      const ink = colors[p.inkIndex] || colors[0];
+      const pct = Math.round((Math.min(p.position, goal) / goal) * 100);
+      const mine = p.publicId === state.turn.currentPlayerId ? ' class="is-current"' : '';
+      return `<li${mine}><span>${i + 1}</span><span class="rank-copy"><strong>${escapeHtml(p.displayName || `Jugador ${p.symbol}`)}</strong>${statuses ? `<small>${statuses}</small>` : ''}<span class="rank-bar"><i style="width:${pct}%;background:${ink}"></i></span></span><span class="dot" style="background:${ink}">${p.symbol}</span></li>`;
+    }).join('');
+    $('effects').innerHTML = (state.effects || []).slice(0, 4).map(e => `<span>${escapeHtml(e)}</span>`).join('');
+  }
+
+  /// EL RETO. Es lo único, junto al final de la partida, que se come la
+  /// pantalla entera: lo tiene que leer toda la mesa a la vez y mientras está
+  /// puesto no hay nada que animar en el tablero.
+  function renderCard() {
+    const card = state.publicCard;
+    $('card').hidden = !card;
+    if (!card) return;
+    $('card-suit').textContent = (card.suit || '').toUpperCase();
+    $('card-sober').hidden = !card.nonAlcohol;
+    $('card-title').textContent = card.title;
+    $('card-body').textContent = card.body;
+    const who = state.players.find(p => p.publicId === (card.playerId || state.turn.currentPlayerId));
+    $('card-who').hidden = !who;
+    if (who) {
+      const mark = $('card-who-mark');
+      mark.textContent = who.symbol;
+      mark.style.background = colors[who.inkIndex] || colors[0];
+      mark.style.color = who.inkIndex === 2 ? 'var(--ink)' : '#fff';
+      $('card-who-name').textContent = (who.displayName || `JUGADOR ${who.symbol}`).toUpperCase();
+    }
+  }
+
+  /// Todo lo demás -oca, puente, pozo, cárcel, brindis, reglas- entra en una
+  /// BANDA apoyada en el borde de abajo del póster. Antes era una hoja a
+  /// pantalla completa y tapaba justo lo que la mesa quería mirar.
+  function renderCeremony() {
+    const ceremony = state.publicCeremony;
+    const victory = ceremony && ceremony.type === 'victoria';
+    const banded = !!ceremony && !victory;
+    $('banner').hidden = !banded;
+    $('ceremony').hidden = !victory;
+    // El tablero se encoge lo que ocupa la banda en vez de quedar tapado por
+    // ella: el SVG se reajusta solo y no se pierde ni una casilla.
+    $('poster').classList.toggle('banded', banded);
+
+    if (banded) {
+      const look = ART.ceremonyLook(ceremony.type);
+      const tone = TONE[look.tone] || TONE.neutro;
+      setVar($('banner'), '--tone', tone);
+      $('banner-type').textContent = look.kicker;
+      $('banner-title').textContent = ceremony.title;
+      $('banner-body').textContent = ceremony.body || '';
+      const glyph = $('banner-glyph');
+      glyph.replaceChildren();
+      drawPictogram(glyph, look.pict, 50, 50, 96, 'var(--ink)');
+    }
+
+    const ranking = [...state.players].sort((a, b) => b.position - a.position);
+    if (victory) {
+      $('ceremony-type').textContent = 'EL JARDÍN';
+      $('ceremony-title').textContent = ceremony.title;
+      $('ceremony-body').textContent = ceremony.body || '';
+    }
+    const finalRanking = $('ceremony-ranking');
+    finalRanking.hidden = !victory;
+    finalRanking.innerHTML = victory
+      ? ranking.slice(0, 8).map((p, i) => `<li><span>${i + 1}</span><strong>${escapeHtml(p.displayName || `Jugador ${p.symbol}`)}</strong><span>${p.position}</span></li>`).join('')
+      : '';
+  }
+
+  function renderOverlays() {
+    pendingOverlays = false;
+    if (!state) return;
+    renderCard();
+    renderCeremony();
+    $('private-note').hidden = !state.secretDecision || state.privacyCover;
+    $('privacy').hidden = !state.privacyCover;
+  }
+
+  function render() {
+    if (!state) return;
+    $('connection').hidden = true;
+    document.body.classList.toggle('reduced', reduced());
+    $('edition').textContent = state.board.title.toUpperCase();
+    renderBoard();
+    renderTokens();
+    renderScore();
+    // El sello de la esquina se rellena con lo que diga el estado mientras no
+    // haya una tirada en curso: al reconectar a media partida la mesa ve la
+    // última tirada sin esperar a la siguiente.
+    if (!busy() && !lastRoll.length && (state.turn.dice || []).length) {
+      lastRoll = state.turn.dice.slice(0, 4);
+      paintRollSlot(false);
+    }
+    // La carta y la banda esperan a que la ficha aterrice: primero el dado,
+    // después el recorrido, y solo entonces lo que ha pasado.
+    if (busy()) { pendingOverlays = true; return; }
+    renderOverlays();
+  }
+
+  function animateCue(type, payload) {
+    if (type === 'dice_started') {
+      lastRoll = [];
+      $('roll-slot').hidden = true;
+      schedule(startRolling, ART.DICE_ROLL_MS);
+      return;
+    }
+    if (type === 'dice_result') {
+      const dice = Array.isArray(payload.dice) ? payload.dice : [];
+      schedule(() => settleDice(dice), ART.DICE_STAMP_MS);
+      schedule(stowDice, ART.DICE_STOW_MS);
+      return;
+    }
+    if (type === 'piece_path') {
+      // La ficha se ancla YA en su casilla de origen: el snapshot con la
+      // posición final viene detrás y no puede teletransportarla.
+      const playerId = state?.turn?.currentPlayerId;
+      if (playerId && typeof payload.from === 'number') {
+        hopHold = {id: playerId, position: payload.from};
+        if (state && !hopActive) renderTokens();
+      }
+      const segments = ART.hopPlanFor(payload.from, payload.path, payload.to);
+      schedule(() => playHop(payload), ART.hopDuration(segments));
+      return;
+    }
+    if (type === 'ceremony_closed') {
+      $('banner').hidden = true;
+      return;
+    }
+    if (type === 'privacy_cover_changed') {
+      $('privacy').hidden = !payload.covered;
+      if (payload.covered) $('private-note').hidden = true;
+      return;
+    }
   }
   function escapeHtml(value){return String(value).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+
+  // --- arranque -----------------------------------------------------------
 
   const demoMode = new URLSearchParams(location.search).get('demo');
   if (!demoMode && window.cast?.framework) {
@@ -339,8 +651,34 @@
     context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED,e=>{authority.release(e.senderId);if(!authority.senderId){$('connection').hidden=false;$('connection').querySelector('h2').textContent='RECONECTANDO'}});
     context.start({disableIdleTimeout:true});
   } else {
-    const demo={protocolVersion:1,board:{publicId:'clasica',title:'Oca Clásica',visualTheme:'clasica',goal:63,geometryVersion:1,specialSquares:{'5':'oca','6':'puente','9':'oca','12':'puente','14':'oca','18':'oca','19':'posada','23':'oca','26':'dados','27':'oca','31':'pozo','32':'oca','36':'oca','41':'oca','42':'laberinto','45':'oca','50':'oca','53':'dados','54':'oca','56':'carcel','58':'muerte','59':'oca','63':'jardin'}},players:[{publicId:'j1',displayName:'Lola',inkIndex:0,symbol:'1',position:23,statuses:['pozo']},{publicId:'j2',displayName:'Dani',inkIndex:3,symbol:'2',position:18,statuses:[]},{publicId:'j3',displayName:'Rita',inkIndex:1,symbol:'3',position:18,statuses:[]}],turn:{currentPlayerId:'j1',round:4,dice:[5]},phase:'idle',effects:['REGLA DE LA NOCHE'],privacyCover:false,accessibility:{reducedMotion:false}};
-    state=demo;render();if(demoMode==='card'){state.publicCard={title:'CONFESIÓN DE BARRA',body:'Cuenta tu peor excusa para llegar tarde o cumple el castigo.',suit:'ESPADAS',nonAlcohol:false};render()}if(demoMode==='ceremony'){state.publicCeremony={type:'OCA',title:'DE OCA A OCA',body:'Y BEBE PORQUE TE TOCA'};render()}if(demoMode==='privacy'){state.privacyCover=true;render()}if(demoMode==='private'){state.secretDecision=true;render()}if(demoMode==='victory'){state.players[0].position=63;state.publicCeremony={type:'victoria',title:'CAMPEÓN DE LA OCA',body:'LOLA'};render()}
-    if(demoMode==='hop'){setInterval(()=>{const p=state.players[0];const from=p.position;const path=[];for(let i=1;i<=4;i++)path.push(((from+i-1)%62)+1);p.position=path[path.length-1];render();playHop({from,to:p.position,path})},3200)}
+    const demo={protocolVersion:1,board:{publicId:'clasica',title:'Oca Clásica',visualTheme:'clasica',goal:63,geometryVersion:1,specialSquares:{'5':'oca','6':'puente','9':'oca','12':'puente','14':'oca','18':'oca','19':'posada','23':'oca','26':'dados','27':'oca','31':'pozo','32':'oca','36':'oca','41':'oca','42':'laberinto','45':'oca','50':'oca','53':'dados','54':'oca','56':'carcel','58':'muerte','59':'oca','63':'jardin'}},players:[{publicId:'j1',displayName:'Lola',inkIndex:0,symbol:'1',position:23,statuses:['pozo']},{publicId:'j2',displayName:'Dani',inkIndex:3,symbol:'2',position:18,statuses:[]},{publicId:'j3',displayName:'Rita',inkIndex:1,symbol:'3',position:18,statuses:[]}],turn:{currentPlayerId:'j1',round:4,dice:[5,3]},phase:'idle',effects:['REGLA DE LA NOCHE'],privacyCover:false,accessibility:{reducedMotion:false}};
+    state=demo;render();
+    if(demoMode==='card'){state.publicCard={title:'CONFESIÓN DE BARRA',body:'Cuenta tu peor excusa para llegar tarde o cumple el castigo.',suit:'ESPADAS',nonAlcohol:false};render()}
+    if(demoMode==='ceremony'){state.publicCeremony={type:'oca',title:'DE OCA A OCA',body:'Y BEBE PORQUE TE TOCA'};render()}
+    if(demoMode==='castigo'){state.publicCeremony={type:'pozo',title:'AL POZO',body:'LOLA'};render()}
+    if(demoMode==='privacy'){state.privacyCover=true;render()}
+    if(demoMode==='private'){state.secretDecision=true;render()}
+    if(demoMode==='victory'){state.players[0].position=63;state.publicCeremony={type:'victoria',title:'CAMPEÓN DE LA OCA',body:'LOLA'};render()}
+    if(demoMode==='dice'){
+      // Turno completo en bucle: tirada, recorrido y banda, tal cual llega de
+      // un móvil de verdad.
+      const turno=()=>{
+        const p=state.players[0];
+        const from=p.position;
+        const dado=[faceRoll(),faceRoll()];
+        const path=[];
+        for(let i=1;i<=dado[0]+dado[1];i++)path.push(((from+i-1)%62)+1);
+        animateCue('dice_started',{});
+        animateCue('dice_result',{dice:dado,total:dado[0]+dado[1]});
+        animateCue('piece_path',{from,to:path[path.length-1],path});
+        p.position=path[path.length-1];
+        state.turn.dice=dado;
+        state.publicCeremony={type:'oca',title:'DE OCA A OCA',body:'Y BEBE PORQUE TE TOCA'};
+        render();
+      };
+      turno();
+      if(typeof setInterval==='function')setInterval(turno,6000);
+    }
+    if(demoMode==='hop'){setInterval(()=>{const p=state.players[0];const from=p.position;const path=[];for(let i=1;i<=4;i++)path.push(((from+i-1)%62)+1);p.position=path[path.length-1];render();animateCue('piece_path',{from,to:p.position,path})},3200)}
   }
 })();

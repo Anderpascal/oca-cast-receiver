@@ -402,6 +402,140 @@ test('la ficha recorre el camino y un snapshot a media animación no la corta', 
   assert.equal(Math.round(y), Math.round(destino.y));
 });
 
+/// Reloj y cuadros bajo control para poder recorrer un turno entero paso a
+/// paso: los cues de un turno llegan del móvil en el MISMO instante y lo que
+/// se prueba aquí es justamente que la tele los reparte en el tiempo.
+function fakeClock() {
+  let now = 0;
+  let seq = 0;
+  const timers = new Map();
+  const frames = [];
+  return {
+    now: () => now,
+    setTimeout: (cb, ms) => {
+      const id = ++seq;
+      timers.set(id, { at: now + (ms || 0), cb });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+    requestAnimationFrame: (cb) => frames.push(cb),
+    advance(ms) {
+      const target = now + ms;
+      for (let guard = 0; guard < 10000; guard++) {
+        let next = null;
+        for (const [id, timer] of timers) {
+          if (timer.at <= target && (next === null || timer.at < timers.get(next).at)) {
+            next = id;
+          }
+        }
+        const step = next === null ? target : timers.get(next).at;
+        // Los cuadros de animación corren aunque no venza ningún temporizador.
+        while (now < step) {
+          now = Math.min(step, now + 16);
+          frames.splice(0, frames.length).forEach((cb) => cb());
+        }
+        if (next === null) break;
+        const timer = timers.get(next);
+        timers.delete(next);
+        timer.cb();
+      }
+      now = target;
+      frames.splice(0, frames.length).forEach((cb) => cb());
+    },
+  };
+}
+
+test('un turno entero: dados sobre el tablero, ficha andando y banda al final', () => {
+  const clock = fakeClock();
+  const cast = bootCastReceiver({
+    Date: { now: clock.now },
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    requestAnimationFrame: clock.requestAnimationFrame,
+  });
+  const tokenAt = () => {
+    const layer = cast.element('board-tokens');
+    return layer.children.length ? layer.children[0].transform : null;
+  };
+  const geo = boardArt.geometryFor(63);
+  const centerOf = (n) => boardArt.centerOf(geo.cells[n - 1]);
+  const near = (transform, n) => {
+    const [x, y] = transform.match(/translate\(([-\d.]+),([-\d.]+)\)/).slice(1).map(Number);
+    const c = centerOf(n);
+    return Math.abs(x - c.x) < 1 && Math.abs(y - c.y) < 1;
+  };
+
+  cast.connect('movil-a');
+  cast.message('movil-a', castCue(1, 'snapshot', { state: publicSnapshot() }));
+  assert.ok(near(tokenAt(), 12), 'la ficha empieza en la 12');
+
+  // El móvil manda el turno completo de golpe, como hace de verdad.
+  cast.message('movil-a', castCue(2, 'dice_started'));
+  cast.message('movil-a', castCue(3, 'dice_result', { dice: [4, 2], total: 6 }));
+  cast.message('movil-a', castCue(4, 'piece_path', { from: 12, to: 18, path: [13, 14, 15, 16, 17, 18] }));
+  const conCeremonia = publicSnapshot();
+  conCeremonia.players[0].position = 18;
+  conCeremonia.turn.dice = [4, 2];
+  conCeremonia.publicCeremony = { type: 'oca', title: 'DE OCA A OCA', body: 'Y BEBE PORQUE TE TOCA' };
+  cast.message('movil-a', castCue(5, 'snapshot', { state: conCeremonia }));
+
+  // NADA de hoja a pantalla completa por una tirada, y la ficha sigue en su
+  // casilla: el snapshot con la posición final NO puede teletransportarla.
+  assert.equal(cast.element('ceremony').hidden, true);
+  assert.equal(cast.element('banner').hidden, true);
+  assert.equal(cast.element('dice-stage').hidden, false, 'los dados ruedan sobre el tablero');
+  assert.ok(near(tokenAt(), 12), 'la ficha no se adelanta a su recorrido');
+
+  // Los dados se asientan en el valor de verdad y encogen hasta el sello.
+  clock.advance(boardArt.DICE_ROLL_MS + boardArt.DICE_STAMP_MS);
+  assert.deepEqual(
+    cast.element('dice-faces').children.map((d) => d.textContent),
+    ['4', '2'],
+  );
+  assert.equal(cast.element('dice-total').textContent, '6');
+  clock.advance(boardArt.DICE_STOW_MS + 40);
+  assert.equal(cast.element('roll-slot').hidden, false, 'el resultado se guarda en la esquina');
+  assert.equal(cast.element('roll-total').textContent, '6');
+  // Y solo AHORA empieza a andar la ficha, con la banda todavía sin sacar.
+  assert.equal(cast.element('banner').hidden, true);
+
+  const recorrido = new Set();
+  const total = boardArt.hopDuration(boardArt.hopPlanFor(12, [13, 14, 15, 16, 17, 18], 18));
+  for (let t = 0; t < total; t += 120) {
+    clock.advance(120);
+    recorrido.add(tokenAt());
+  }
+  assert.ok(recorrido.size >= 6, `la mesa tiene que ver el recorrido, vio ${recorrido.size}`);
+
+  clock.advance(200);
+  assert.ok(near(tokenAt(), 18), 'la ficha aterriza donde dice el estado');
+  // La ceremonia llega DESPUÉS del salto, y en la banda: el tablero se ve.
+  assert.equal(cast.element('banner').hidden, false);
+  assert.equal(cast.element('banner-title').textContent, 'DE OCA A OCA');
+  assert.equal(cast.element('banner-type').textContent, 'CASILLA DE LA OCA');
+  assert.equal(cast.element('ceremony').hidden, true);
+});
+
+test('el reto se lee a pantalla completa y dice a quién le toca', () => {
+  const cast = bootCastReceiver();
+  cast.connect('movil-a');
+  const conReto = publicSnapshot();
+  conReto.publicCard = {
+    title: 'CONFESIÓN DE BARRA',
+    body: 'Cuenta tu peor excusa.',
+    suit: 'espadas',
+    nonAlcohol: true,
+    playerId: 'j1',
+  };
+  cast.message('movil-a', castCue(1, 'snapshot', { state: conReto }));
+  assert.equal(cast.element('card').hidden, false);
+  assert.equal(cast.element('card-title').textContent, 'CONFESIÓN DE BARRA');
+  assert.equal(cast.element('card-suit').textContent, 'ESPADAS');
+  assert.equal(cast.element('card-sober').hidden, false);
+  assert.equal(cast.element('card-who').hidden, false);
+  assert.equal(cast.element('card-who-name').textContent, 'LOLA');
+});
+
 test('con movimiento reducido la ficha no anima pero llega igual', () => {
   const frames = [];
   const cast = bootCastReceiver({

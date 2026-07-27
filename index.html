@@ -10,35 +10,82 @@
 </head>
 <body>
   <main id="stage" aria-live="polite">
-    <section class="paper" aria-label="Tablero de La Oca">
+    <section id="poster" class="paper" aria-label="Tablero de La Oca">
       <div class="print-head"><span>LA OCA BORRACHA</span><span id="edition">EDICIÓN CLÁSICA</span><span>SEGUNDA PANTALLA</span></div>
       <!-- El tablero es SVG y no divs: escala sin perder filo de 720p a 4K y
            deja dibujar los pictogramas de imprenta como vectores en vez de
-           glifos de texto. `board-cells` lleva una casilla por hijo;
-           `board-tokens`, una ficha por jugador, encima y animables. -->
-      <svg id="board" class="board" preserveAspectRatio="xMidYMid meet"
-           viewBox="0 0 800 800" role="img" aria-label="Tablero de La Oca">
-        <g id="board-cells"></g>
-        <g id="board-tokens"></g>
-      </svg>
+           glifos de texto. Capas, de abajo a arriba: casillas impresas, rastro
+           del recorrido, marcas de casilla y fichas animables. -->
+      <div class="board-frame">
+        <svg id="board" class="board" preserveAspectRatio="xMidYMid meet"
+             viewBox="0 0 800 800" role="img" aria-label="Tablero de La Oca">
+          <g id="board-cells"></g>
+          <g id="board-trail"></g>
+          <g id="board-marks"></g>
+          <g id="board-tokens"></g>
+        </svg>
+        <!-- LOS DADOS. Ruedan GRANDES sobre el tablero -sin taparlo del todo-
+             y al asentar encogen hasta el sello de la esquina, que se queda
+             con el resultado hasta la siguiente tirada. Nunca una hoja a
+             pantalla completa: lo que la mesa quiere ver después es la ficha
+             andando, no un cartel. -->
+        <div id="dice-scrim" class="dice-scrim" hidden></div>
+        <div id="dice-stage" class="dice-stage" hidden>
+          <div class="dice-kicker">LA TIRADA</div>
+          <div id="dice-faces" class="dice-faces"></div>
+          <div id="dice-total" class="dice-total"></div>
+        </div>
+        <div id="roll-slot" class="roll-slot" hidden>
+          <div class="roll-kicker">LA TIRADA</div>
+          <div class="roll-line"><div id="roll-faces" class="roll-faces"></div><strong id="roll-total" class="roll-total"></strong></div>
+        </div>
+      </div>
+      <!-- LA BANDA: lo que antes era una hoja rosa a pantalla completa. Se
+           apoya en el borde de abajo del póster, deja el tablero a la vista y
+           entra cuando la ficha ya ha aterrizado. -->
+      <div id="banner" class="banner" hidden>
+        <div class="banner-sheet">
+          <svg id="banner-glyph" class="banner-glyph" viewBox="0 0 100 100" aria-hidden="true"></svg>
+          <div class="banner-copy">
+            <div id="banner-type" class="banner-type"></div>
+            <div id="banner-title" class="banner-title"></div>
+            <div id="banner-body" class="banner-body"></div>
+          </div>
+        </div>
+      </div>
       <div class="misregister one"></div><div class="misregister two"></div>
     </section>
     <aside class="score">
       <div class="score-kicker">AHORA JUEGA</div>
       <div id="player-mark" class="player-mark">1</div>
       <h1 id="player-name">MESA PREPARADA</h1>
-      <div id="round" class="stamp">RONDA 1</div>
-      <div id="dice" class="dice" aria-label="Sin tirada">·</div>
+      <div class="score-tags"><div id="round" class="stamp">RONDA 1</div><div id="square" class="stamp square">CASILLA 1</div></div>
+      <div id="togo" class="togo"></div>
       <ol id="ranking" class="ranking"></ol>
       <div id="effects" class="effects"></div>
       <div class="remote-note">TODO SE DECIDE EN EL MANDO</div>
     </aside>
-    <section id="card" class="takeover card" hidden><div class="takeover-sheet"><div id="card-suit" class="eyebrow"></div><h2 id="card-title"></h2><p id="card-body"></p></div></section>
-    <section id="ceremony" class="takeover ceremony" hidden><div class="burst"></div><div class="ceremony-copy"><div id="ceremony-type" class="eyebrow"></div><h2 id="ceremony-title"></h2><p id="ceremony-body"></p><ol id="ceremony-ranking" class="ceremony-ranking" hidden></ol></div></section>
+    <section id="card" class="takeover card" hidden>
+      <div class="takeover-sheet">
+        <div class="card-head"><div id="card-suit" class="eyebrow"></div><div id="card-sober" class="card-sober" hidden>SIN ALCOHOL</div></div>
+        <h2 id="card-title"></h2>
+        <p id="card-body"></p>
+        <div id="card-who" class="card-who" hidden><span id="card-who-mark" class="card-who-mark"></span><span id="card-who-name" class="card-who-name"></span></div>
+        <div class="card-foot">SE VOTA EN EL MANDO</div>
+      </div>
+    </section>
+    <section id="ceremony" class="takeover ceremony" hidden>
+      <div class="burst"></div>
+      <div class="ceremony-copy">
+        <div id="ceremony-type" class="eyebrow"></div>
+        <h2 id="ceremony-title"></h2>
+        <p id="ceremony-body"></p>
+        <ol id="ceremony-ranking" class="ceremony-ranking" hidden></ol>
+      </div>
+    </section>
     <section id="privacy" class="takeover privacy" hidden><div class="privacy-poster"><div class="goose">OCA</div><h2>TELE TAPADA</h2><p>LA PARTIDA SIGUE EN EL MANDO</p></div></section>
     <section id="connection" class="takeover connection"><div class="connection-poster"><div class="cast-glyph">◔</div><h2>MESA PREPARADA</h2><p>ELIGE ESTA TELE DESDE LA OCA</p></div></section>
     <div id="private-note" class="private-note" hidden>DECISIÓN SECRETA EN EL MANDO</div>
-    <div id="toast" class="toast" hidden></div>
   </main>
   <script src="protocol.js"></script>
   <script src="board_art.js"></script>
