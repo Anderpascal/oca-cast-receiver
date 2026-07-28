@@ -14,12 +14,20 @@
       <div class="print-head"><span>LA OCA BORRACHA</span><span id="edition">EDICIÓN CLÁSICA</span><span>SEGUNDA PANTALLA</span></div>
       <!-- El tablero es SVG y no divs: escala sin perder filo de 720p a 4K y
            deja dibujar los pictogramas de imprenta como vectores en vez de
-           glifos de texto. Capas, de abajo a arriba: casillas impresas, rastro
-           del recorrido, marcas de casilla y fichas animables. -->
+           glifos de texto.
+           Van DOS svg superpuestos, no uno con capas dentro, y es a propósito:
+           la plancha impresa (63 casillas, ~340 nodos) se rasteriza UNA vez y
+           no se vuelve a tocar, mientras el rastro, las marcas y las fichas
+           viven en una capa propia y casi vacía que es la única que se repinta
+           al andar la ficha. Con todo en el mismo svg, cada cuadro del salto
+           obligaba a repintar el cartel entero debajo de la ficha. -->
       <div class="board-frame">
         <svg id="board" class="board" preserveAspectRatio="xMidYMid meet"
              viewBox="0 0 800 800" role="img" aria-label="Tablero de La Oca">
           <g id="board-cells"></g>
+        </svg>
+        <svg id="board-fx" class="board board-fx" preserveAspectRatio="xMidYMid meet"
+             viewBox="0 0 800 800" aria-hidden="true">
           <g id="board-trail"></g>
           <g id="board-marks"></g>
           <g id="board-tokens"></g>

@@ -28,6 +28,12 @@
   let hopHold = null;
   /// Carta y banda esperando a que la escena en curso termine.
   let pendingOverlays = false;
+  /// Marcador esperando lo mismo. El móvil manda la estampa con la posición
+  /// final PISÁNDOLE LOS TALONES al recorrido, así que reescribir nombres,
+  /// clasificación y barras justo entonces metía un pico de maqueta en mitad
+  /// del salto. Además es más honesto: la casilla nueva se canta cuando la
+  /// ficha ha aterrizado, no antes.
+  let pendingScore = false;
   let lastRoll = [];
   let shownTurn = '';
 
@@ -101,7 +107,7 @@
     const step = steps.shift();
     if (!step) {
       running = false;
-      if (pendingOverlays) renderOverlays();
+      flushDeferred();
       return;
     }
     running = true;
@@ -124,12 +130,16 @@
     node.textContent = value;
     return node;
   }
-  function div(cls, value, parent) {
-    const node = document.createElement('div');
-    node.className = cls;
-    if (value !== undefined) node.textContent = value;
+  function htmlEl(tag, cls, parent) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
     if (parent) parent.append(node);
     return node;
+  }
+  /// Escribir en el DOM invalida maqueta aunque el valor sea el mismo. El
+  /// marcador reescribía los mismos nombres en cada estampa del móvil.
+  function setText(node, value) {
+    if (node && node.textContent !== value) node.textContent = value;
   }
   /// `style.setProperty` no existe en todos los entornos donde se prueba esto;
   /// nunca debe tumbar un pintado por un color.
@@ -195,8 +205,14 @@
 
     const geo = ART.geometryFor(board.goal);
     const theme = ART.themeFor(board.visualTheme);
-    const svg = $('board');
-    svg.setAttribute('viewBox', `0 0 ${geo.cols * U} ${geo.rows * U}`);
+    // Las dos planchas comparten caja: si una se desencuadra, las fichas dejan
+    // de caer sobre su casilla. Se comprueba que la capa exista porque un
+    // aparato con el HTML viejo cacheado y el JS nuevo no la tiene, y por un
+    // atributo no se puede quedar el tablero entero sin pintar.
+    const box = `0 0 ${geo.cols * U} ${geo.rows * U}`;
+    $('board').setAttribute('viewBox', box);
+    const fx = $('board-fx');
+    if (fx) fx.setAttribute('viewBox', box);
     const cells = $('board-cells');
     cells.replaceChildren();
 
@@ -242,7 +258,7 @@
     layer.replaceChildren();
     const current = state.players.find(p => p.publicId === state.turn.currentPlayerId);
     if (!current) return;
-    const c = ART.centerOf(cellByNumber(positionOf(current)));
+    const c = centerAt(positionOf(current));
     el('circle', {
       cx: c.x, cy: c.y, r: U * 0.44, class: 'mark-ring',
       fill: 'none', stroke: colors[current.inkIndex] || colors[0], 'stroke-width': 6,
@@ -309,7 +325,7 @@
     return {scale: 0.46, cols: 3};
   }
   function restingSpot(position, index, total) {
-    const c = ART.centerOf(cellByNumber(position));
+    const c = centerAt(position);
     if (total <= 1) return c;
     const {cols} = crowdLayout(total);
     const rows = Math.ceil(total / cols);
@@ -321,11 +337,10 @@
     };
   }
 
-  function cellByNumber(n) {
-    const geo = ART.geometryFor(state.board.goal);
-    const clamped = Math.min(Math.max(n, 1), state.board.goal);
-    return geo.cells[clamped - 1];
-  }
+  /// Centro de una casilla del tablero en curso. Es una LECTURA de una tabla
+  /// ya resuelta en `board_art`: antes cada llamada reconstruía la espiral
+  /// entera, y el salto de la ficha la pedía dos veces por cuadro.
+  const centerAt = (n) => ART.centerFor(state.board.goal, n);
 
   function setTokenAt(g, x, y, squash) {
     // scale(2-squash, squash): estirar al despegar y aplastar al aterrizar,
@@ -345,9 +360,19 @@
   const faceRoll = () => 1 + Math.floor(Math.random() * 6);
   const sum = (values) => values.reduce((a, b) => a + b, 0);
 
+  /// Las caras se REESCRIBEN, no se vuelven a crear. Rehacer los nodos nueve
+  /// veces por tirada reiniciaba en seco la animación de volteo del CSS -que
+  /// es justo lo que hacía que los dados se vieran a tirones- y obligaba a
+  /// recalcular la maqueta en cada cambio de cara.
+  const faceNodes = new WeakMap();
   function paintFaces(container, values) {
-    container.replaceChildren();
-    for (const value of values) div('die', String(value), container);
+    let nodes = faceNodes.get(container);
+    if (!nodes || nodes.length !== values.length) {
+      nodes = values.map(() => htmlEl('div', 'die'));
+      container.replaceChildren(...nodes);
+      faceNodes.set(container, nodes);
+    }
+    for (let i = 0; i < values.length; i++) nodes[i].textContent = String(values[i]);
   }
   function stopRolling() {
     if (diceTimer !== null) { clearTimeout(diceTimer); diceTimer = null; }
@@ -429,20 +454,49 @@
     : setTimeout(cb, 16));
 
   /// Huella de tinta por donde ha pasado la ficha. Se desvanece sola con CSS:
-  /// marca el recorrido sin dejar el tablero sucio.
+  /// marca el recorrido sin dejar el tablero sucio. Un recorrido largo puede
+  /// pedir treinta huellas; se queda con las últimas para no acumular nodos
+  /// animándose a la vez sobre la capa de las fichas.
+  const TRAIL_MAX = 12;
   function dropTrail(position, ink) {
     if (reduced()) return;
-    const c = ART.centerOf(cellByNumber(position));
-    el('circle', {cx: c.x, cy: c.y, r: U * 0.1, fill: ink, opacity: 0.85, class: 'trail-dot'}, $('board-trail'));
+    const layer = $('board-trail');
+    const c = centerAt(position);
+    el('circle', {cx: c.x, cy: c.y, r: U * 0.1, fill: ink, opacity: 0.85, class: 'trail-dot'}, layer);
+    const dots = layer.children;
+    if (dots && dots.length > TRAIL_MAX && typeof layer.removeChild === 'function') {
+      layer.removeChild(dots[0]);
+    }
+  }
+
+  /// Deja el recorrido resuelto ANTES de empezar a animar: coordenadas de
+  /// salida, desplazamiento y ventana de tiempo de cada tramo. Así un cuadro
+  /// del salto es una interpolación y una escritura de `transform`, y no
+  /// reconstruir el tablero y recorrer la lista de tramos desde el principio.
+  function hopTimeline(goal, segments) {
+    const plan = [];
+    let acc = 0;
+    for (const s of segments) {
+      const a = ART.centerFor(goal, s.from);
+      const b = ART.centerFor(goal, s.to);
+      plan.push({
+        from: s.from, x: a.x, y: a.y, dx: b.x - a.x, dy: b.y - a.y,
+        start: acc, ms: s.ms, lift: s.jump ? U * 0.9 : U * 0.46,
+      });
+      acc += s.ms;
+    }
+    return {plan, total: acc};
   }
 
   function playHop(payload) {
     const playerId = state?.turn?.currentPlayerId;
     const node = tokenNodes.get(playerId);
     const segments = ART.hopPlanFor(payload.from, payload.path, payload.to);
+    const fx = $('board-fx');
     const finish = () => {
       hopActive = null;
       hopHold = null;
+      if (fx && fx.classList) fx.classList.remove('hopping');
       $('board-trail').replaceChildren();
       if (state) renderTokens();
     };
@@ -451,26 +505,24 @@
     const player = state.players.find(p => p.publicId === playerId);
     const ink = colors[player ? player.inkIndex : 0] || colors[0];
     hopActive = playerId;
-    const total = ART.hopDuration(segments);
+    if (fx && fx.classList) fx.classList.add('hopping');
+    const {plan, total} = hopTimeline(state.board.goal, segments);
     const started = Date.now();
-    let printed = -1;
+    // El tramo solo avanza; el tiempo no retrocede y buscar desde el principio
+    // en cada cuadro no aportaba nada.
+    let index = 0, printed = -1;
     const frame = () => {
       const t = Date.now() - started;
       if (t >= total) { finish(); return; }
-      let acc = 0, seg = segments[0], index = 0;
-      for (let i = 0; i < segments.length; i++) {
-        if (t < acc + segments[i].ms) { seg = segments[i]; index = i; break; }
-        acc += segments[i].ms;
-      }
+      while (index < plan.length - 1 && t >= plan[index].start + plan[index].ms) index++;
+      const seg = plan[index];
       if (index !== printed) { printed = index; dropTrail(seg.from, ink); }
-      const u = Math.min(1, Math.max(0, (t - acc) / seg.ms));
-      const a = ART.centerOf(cellByNumber(seg.from));
-      const b = ART.centerOf(cellByNumber(seg.to));
+      const u = Math.min(1, Math.max(0, (t - seg.start) / seg.ms));
       const lift = Math.sin(Math.PI * u);
       setTokenAt(
         node,
-        a.x + (b.x - a.x) * u,
-        a.y + (b.y - a.y) * u - lift * (seg.jump ? U * 0.9 : U * 0.46),
+        seg.x + seg.dx * u,
+        seg.y + seg.dy * u - lift * seg.lift,
         1 + lift * 0.13,
       );
       raf(frame);
@@ -480,13 +532,55 @@
 
   // --- marcador y hojas ---------------------------------------------------
 
+  /// Filas de la clasificación, creadas UNA vez y reescritas después. Antes
+  /// cada estampa del móvil rehacía la lista entera con `innerHTML`: volver a
+  /// parsear y maquetar la lista en mitad del salto de la ficha es un pico de
+  /// trabajo justo en el peor momento posible.
+  const rankRows = [];
+  let effectsSignature = null;
+
+  function rankRow() {
+    const li = htmlEl('li');
+    const pos = htmlEl('span', '', li);
+    const copy = htmlEl('span', 'rank-copy', li);
+    const name = htmlEl('strong', '', copy);
+    const tags = htmlEl('small', '', copy);
+    const bar = htmlEl('span', 'rank-bar', copy);
+    const fill = htmlEl('i', '', bar);
+    const dot = htmlEl('span', 'dot', li);
+    return {li, pos, name, tags, fill, dot};
+  }
+
+  function renderRanking(ranking, goal) {
+    const list = $('ranking');
+    if (rankRows.length !== ranking.length) {
+      rankRows.length = 0;
+      for (let i = 0; i < ranking.length; i++) rankRows.push(rankRow());
+      list.replaceChildren(...rankRows.map(r => r.li));
+    }
+    ranking.forEach((p, i) => {
+      const row = rankRows[i];
+      const ink = colors[p.inkIndex] || colors[0];
+      const statuses = (p.statuses || []).map(s => statusLabels[s]).filter(Boolean).join(' · ');
+      setText(row.pos, String(i + 1));
+      setText(row.name, p.displayName || `Jugador ${p.symbol}`);
+      setText(row.tags, statuses);
+      row.tags.hidden = !statuses;
+      row.fill.style.width = `${Math.round((Math.min(p.position, goal) / goal) * 100)}%`;
+      row.fill.style.background = ink;
+      setText(row.dot, p.symbol);
+      row.dot.style.background = ink;
+      row.li.classList.toggle('is-current', p.publicId === state.turn.currentPlayerId);
+    });
+  }
+
   function renderScore() {
     const current = state.players.find(p => p.publicId === state.turn.currentPlayerId) || state.players[0];
     if (current) {
       const mark = $('player-mark');
-      mark.textContent = current.symbol;
+      setText(mark, current.symbol);
       mark.style.background = colors[current.inkIndex];
-      $('player-name').textContent = (current.displayName || `JUGADOR ${current.symbol}`).toUpperCase();
+      setText($('player-name'), (current.displayName || `JUGADOR ${current.symbol}`).toUpperCase());
       const key = `${current.publicId}|${state.turn.round}`;
       if (key !== shownTurn) {
         shownTurn = key;
@@ -495,23 +589,26 @@
       }
       const at = positionOf(current);
       const left = Math.max(0, state.board.goal - at);
-      $('square').textContent = `CASILLA ${at}`;
-      $('togo').textContent = left === 0
+      setText($('square'), `CASILLA ${at}`);
+      setText($('togo'), left === 0
         ? 'HA LLEGADO AL JARDÍN'
-        : `FALTAN ${left} PARA EL JARDÍN`;
+        : `FALTAN ${left} PARA EL JARDÍN`);
     }
-    $('round').textContent = `RONDA ${state.turn.round}`;
+    setText($('round'), `RONDA ${state.turn.round}`);
 
-    const goal = state.board.goal || 63;
-    const ranking = [...state.players].sort((a, b) => b.position - a.position);
-    $('ranking').innerHTML = ranking.map((p, i) => {
-      const statuses = (p.statuses || []).map(s => statusLabels[s]).filter(Boolean).join(' · ');
-      const ink = colors[p.inkIndex] || colors[0];
-      const pct = Math.round((Math.min(p.position, goal) / goal) * 100);
-      const mine = p.publicId === state.turn.currentPlayerId ? ' class="is-current"' : '';
-      return `<li${mine}><span>${i + 1}</span><span class="rank-copy"><strong>${escapeHtml(p.displayName || `Jugador ${p.symbol}`)}</strong>${statuses ? `<small>${statuses}</small>` : ''}<span class="rank-bar"><i style="width:${pct}%;background:${ink}"></i></span></span><span class="dot" style="background:${ink}">${p.symbol}</span></li>`;
-    }).join('');
-    $('effects').innerHTML = (state.effects || []).slice(0, 4).map(e => `<span>${escapeHtml(e)}</span>`).join('');
+    renderRanking(
+      [...state.players].sort((a, b) => b.position - a.position),
+      state.board.goal || 63,
+    );
+
+    // Las leyes de la mesa cambian una vez cada muchas estampas: se reescriben
+    // solo cuando cambian de verdad.
+    const effects = (state.effects || []).slice(0, 4);
+    const signature = effects.join('|');
+    if (signature !== effectsSignature) {
+      effectsSignature = signature;
+      $('effects').innerHTML = effects.map(e => `<span>${escapeHtml(e)}</span>`).join('');
+    }
   }
 
   /// EL RETO. Es lo único, junto al final de la partida, que se come la
@@ -574,6 +671,16 @@
       : '';
   }
 
+  /// Todo lo que se aparcó mientras algo se movía, de una vez y con la escena
+  /// ya parada.
+  function flushDeferred() {
+    if (pendingScore) {
+      pendingScore = false;
+      if (state) renderScore();
+    }
+    if (pendingOverlays) renderOverlays();
+  }
+
   function renderOverlays() {
     pendingOverlays = false;
     if (!state) return;
@@ -587,10 +694,9 @@
     if (!state) return;
     $('connection').hidden = true;
     document.body.classList.toggle('reduced', reduced());
-    $('edition').textContent = state.board.title.toUpperCase();
+    setText($('edition'), state.board.title.toUpperCase());
     renderBoard();
     renderTokens();
-    renderScore();
     // El sello de la esquina se rellena con lo que diga el estado mientras no
     // haya una tirada en curso: al reconectar a media partida la mesa ve la
     // última tirada sin esperar a la siguiente.
@@ -598,9 +704,10 @@
       lastRoll = state.turn.dice.slice(0, 4);
       paintRollSlot(false);
     }
-    // La carta y la banda esperan a que la ficha aterrice: primero el dado,
-    // después el recorrido, y solo entonces lo que ha pasado.
-    if (busy()) { pendingOverlays = true; return; }
+    // El marcador, la carta y la banda esperan a que la ficha aterrice:
+    // primero el dado, después el recorrido, y solo entonces lo que ha pasado.
+    if (busy()) { pendingScore = true; pendingOverlays = true; return; }
+    renderScore();
     renderOverlays();
   }
 

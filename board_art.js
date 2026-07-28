@@ -22,7 +22,21 @@
   // tableros distintos y el recorrido de la ficha no cuadra con el de la mano.
   const GRIDS = { 30: [6, 6], 63: [8, 8] };
 
+  /// La retícula de un tablero no cambia NUNCA durante una partida, pero el
+  /// salto de la ficha la pedía dos veces por cuadro y la reconstruía entera:
+  /// 63 objetos nuevos a 60 cuadros por segundo son ~7.500 asignaciones por
+  /// segundo tirando del recolector, y en un Chromecast eso se ve como
+  /// tirones. Se construye una vez por meta y se reparte la misma.
+  const geometryCache = new Map();
   function geometryFor(goal) {
+    const hit = geometryCache.get(goal);
+    if (hit) return hit;
+    const built = buildGeometry(goal);
+    geometryCache.set(goal, built);
+    return built;
+  }
+
+  function buildGeometry(goal) {
     const [cols, rows] = GRIDS[goal] || [7, 9];
     const cells = [];
     let l = 0, t = 0, r = cols - 1, b = rows - 1, n = 1;
@@ -40,7 +54,12 @@
     // El hueco del medallón: la meta ocupa bloque propio y no pisa a nadie.
     if (goal === 63) cells[62] = cell(63, 3, 3, 2, 1);
     if (goal === 30) cells[29] = cell(30, 2, 2, 2, 2);
-    return { cols, rows, cells, decor: goal === 30 ? [[1, 1], [1, 2], [1, 3]] : [] };
+    // Centros ya resueltos: durante el salto solo se leen, nunca se calculan.
+    const centers = cells.map(centerOf);
+    return {
+      cols, rows, cells, centers,
+      decor: goal === 30 ? [[1, 1], [1, 2], [1, 3]] : [],
+    };
   }
   function cell(n, col, row, colSpan = 1, rowSpan = 1) {
     return { n, col, row, colSpan, rowSpan };
@@ -55,6 +74,15 @@
       x: (c.col + c.colSpan / 2) * U,
       y: (c.row + c.rowSpan / 2) * U,
     };
+  }
+
+  /// Centro de la casilla `n` en un tablero de esa meta, sin construir nada:
+  /// es lo único que necesita el salto de la ficha cuadro a cuadro.
+  function centerFor(goal, n) {
+    const geo = geometryFor(goal);
+    const last = geo.centers.length - 1;
+    const i = Math.min(Math.max(Math.round(n) - 1, 0), last);
+    return geo.centers[i];
   }
 
   // Pictogramas en una caja 0..100 centrada en (50,50). Se describen como
@@ -248,7 +276,7 @@
   const DICE_STAGE_MS = DICE_ROLL_MS + DICE_STAMP_MS + DICE_STOW_MS;
 
   return {
-    geometryFor, centerOf, PICTS, ROLE, THEMES, themeFor, U,
+    geometryFor, centerOf, centerFor, PICTS, ROLE, THEMES, themeFor, U,
     hopPlanFor, hopDuration, ceremonyLook, CEREMONY,
     diceBeats, DICE_ROLL_MS, DICE_STAMP_MS, DICE_STOW_MS, DICE_STAGE_MS,
   };

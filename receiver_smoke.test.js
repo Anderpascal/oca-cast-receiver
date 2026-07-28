@@ -44,6 +44,10 @@ class FakeElement {
   replaceChildren(...children) {
     this.children = [...children];
   }
+  removeChild(child) {
+    this.children = this.children.filter((node) => node !== child);
+    return child;
+  }
   setAttribute(name, value) {
     this[name] = value;
   }
@@ -559,4 +563,45 @@ test('con movimiento reducido la ficha no anima pero llega igual', () => {
   const [x, y] = final.match(/translate\(([-\d.]+),([-\d.]+)\)/).slice(1).map(Number);
   assert.equal(Math.round(x), Math.round(destino.x));
   assert.equal(Math.round(y), Math.round(destino.y));
+});
+
+/// El rastro es adorno: no puede convertirse en una pila de nodos animándose a
+/// la vez sobre la capa de las fichas. Un rebote contra la meta puede pedir
+/// treinta huellas y en un Chromecast eso se nota en el propio salto.
+test('el rastro del recorrido no acumula huellas sin límite', () => {
+  const clock = { t: 0 };
+  const frames = [];
+  const cast = bootCastReceiver({
+    Date: { now: () => clock.t },
+    requestAnimationFrame: (cb) => frames.push(cb),
+  });
+  const tick = (ms) => {
+    clock.t = ms;
+    frames.splice(0, frames.length).forEach((cb) => cb());
+  };
+
+  cast.connect('movil-a');
+  cast.message('movil-a', castCue(1, 'snapshot', { state: publicSnapshot() }));
+
+  // Recorrido largo: 30 casillas, una huella por tramo.
+  const path = Array.from({ length: 30 }, (_, i) => ((12 + i) % 62) + 1);
+  cast.message('movil-a', castCue(2, 'piece_path', {
+    from: 12, to: path[path.length - 1], path,
+  }));
+
+  const total = boardArt.hopDuration(boardArt.hopPlanFor(12, path, path[path.length - 1]));
+  let maximo = 0;
+  let hubo = false;
+  for (let t = 0; t < total; t += 40) {
+    tick(t);
+    const vivas = cast.element('board-trail').children.length;
+    if (vivas > 0) hubo = true;
+    maximo = Math.max(maximo, vivas);
+  }
+  assert.ok(hubo, 'la ficha tiene que dejar huella por donde pasa');
+  assert.ok(maximo <= 12, `el rastro se pasó de tope: ${maximo} huellas vivas`);
+
+  // Y al aterrizar el tablero se queda limpio.
+  tick(total);
+  assert.equal(cast.element('board-trail').children.length, 0);
 });
