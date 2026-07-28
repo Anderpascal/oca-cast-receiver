@@ -664,11 +664,131 @@
       $('ceremony-title').textContent = ceremony.title;
       $('ceremony-body').textContent = ceremony.body || '';
     }
+    // Con resumen manda el CUADRO DE HONOR; la lista pelada se queda como
+    // respaldo para un móvil viejo que todavía no lo mande.
+    const summary = victory ? state.summary : null;
+    renderSummary(summary);
     const finalRanking = $('ceremony-ranking');
-    finalRanking.hidden = !victory;
-    finalRanking.innerHTML = victory
+    finalRanking.hidden = !victory || !!summary;
+    finalRanking.innerHTML = (victory && !summary)
       ? ranking.slice(0, 8).map((p, i) => `<li><span>${i + 1}</span><strong>${escapeHtml(p.displayName || `Jugador ${p.symbol}`)}</strong><span>${p.position}</span></li>`).join('')
       : '';
+  }
+
+  /// PALOTES DE BAR. Cuatro trazos y el quinto cruzado en diagonal sobre los
+  /// cuatro, como los cuenta un camarero y como los pinta el móvil
+  /// (`_TallyGroupPainter`). Se dibujan, no se escriben: un "5" no cuenta lo
+  /// mismo de un vistazo desde el sofá que cinco palos.
+  function tallyGroup(count, ink) {
+    const svg = el('svg', {
+      viewBox: '0 0 30 26', 'aria-hidden': 'true',
+      fill: 'none', stroke: ink, 'stroke-width': 3, 'stroke-linecap': 'round',
+    });
+    const strokes = Math.min(count, 4);
+    for (let i = 0; i < strokes; i++) {
+      const x = 4 + i * 6.5;
+      el('path', {d: `M${x},3 L${x},23`}, svg);
+    }
+    if (count >= 5) el('path', {d: 'M1,21 L29,5'}, svg);
+    return svg;
+  }
+
+  function summaryRowName(row) {
+    return (row.displayName || `JUGADOR ${row.symbol}`).toUpperCase();
+  }
+
+  /// Duración en el formato del ticket: `12 MIN` o `1 H 04`.
+  function prettyDuration(ms) {
+    const total = Math.max(0, Math.round((ms || 0) / 60000));
+    if (total < 60) return `${total} MIN`;
+    const h = Math.floor(total / 60);
+    return `${h} H ${String(total % 60).padStart(2, '0')}`;
+  }
+
+  function renderSummary(summary) {
+    const box = $('summary');
+    if (!box) return;
+    box.hidden = !summary;
+    // La hoja de campeón cambia de reparto cuando trae resumen: sin esto el
+    // titular a tamaño de ceremonia deja el cuadro de honor fuera de un 720p.
+    const copy = typeof document.querySelector === 'function'
+      ? document.querySelector('.ceremony-copy')
+      : null;
+    if (copy && copy.classList) copy.classList.toggle('has-summary', !!summary);
+    if (!summary) return;
+
+    // El sitio en alto manda: con la mesa llena se recorta la lista de
+    // palotes, nunca el podio ni la crónica.
+    const MAX_TALLIES = 6;
+
+    const rows = Array.isArray(summary.rows) ? summary.rows : [];
+    setText($('summary-rounds'), `${summary.rounds} ${summary.rounds === 1 ? 'RONDA' : 'RONDAS'}`);
+    setText($('summary-time'), prettyDuration(summary.durationMs));
+    setText($('summary-drinks'), `${summary.totalDrinks} EN LA CUENTA`);
+
+    // El podio: campeón en el centro y a mayor altura, como en el móvil.
+    const podium = $('summary-podium');
+    podium.replaceChildren();
+    const top = rows.slice(0, 3);
+    const order = top.length === 3 ? [1, 0, 2] : top.map((_, i) => i);
+    for (const index of order) {
+      const row = top[index];
+      if (!row) continue;
+      const ink = colors[row.inkIndex] || colors[0];
+      const li = htmlEl('li', '', podium);
+      const dot = htmlEl('span', 'dot', li);
+      dot.textContent = row.symbol;
+      dot.style.background = ink;
+      dot.style.color = row.inkIndex === 2 ? 'var(--ink)' : '#fff';
+      htmlEl('span', 'who', li).textContent = summaryRowName(row);
+      htmlEl('span', 'sq', li).textContent = `CASILLA ${row.position}`;
+      const step = htmlEl('span', 'step', li);
+      step.textContent = String(index + 1);
+      step.style.borderColor = ink;
+      step.style.color = ink;
+    }
+
+    // Los palotes, uno por jugador, en su tinta.
+    const tallies = $('summary-tallies');
+    tallies.replaceChildren();
+    for (const row of rows.slice(0, MAX_TALLIES)) {
+      const ink = colors[row.inkIndex] || colors[0];
+      const line = htmlEl('div', 'tally', tallies);
+      const who = htmlEl('span', 'who', line);
+      const name = htmlEl('span', 'name', who);
+      name.textContent = summaryRowName(row);
+      name.style.color = ink;
+      const marks = htmlEl('span', 'marks', line);
+      const total = Math.max(0, row.drinks || 0);
+      if (total === 0) {
+        htmlEl('span', 'none', marks).textContent = '—';
+      } else {
+        // Un grupo por cada cinco tragos, el último incompleto.
+        for (let g = 0; g * 5 < total && g < 24; g++) {
+          marks.append(tallyGroup(Math.min(5, total - g * 5), ink));
+        }
+      }
+      const totalNode = htmlEl('span', 'total', line);
+      totalNode.textContent = String(total);
+      totalNode.style.color = ink;
+      // Lo que no son tragos se resume en una línea corta bajo el nombre.
+      const extras = [];
+      if (row.given) extras.push(`${row.given} REPARTIDOS`);
+      if (row.challengesDone) extras.push(`${row.challengesDone} RETOS`);
+      if (row.challengesQuit) extras.push(`${row.challengesQuit} RAJADAS`);
+      if (row.deaths) extras.push(`${row.deaths} MUERTES`);
+      if (row.wells) extras.push(`${row.wells} POZO`);
+      if (row.jails) extras.push(`${row.jails} CÁRCEL`);
+      if (extras.length) {
+        htmlEl('span', 'extra', who).textContent = extras.join(' · ');
+      }
+    }
+
+    const chronicle = $('summary-chronicle');
+    chronicle.replaceChildren();
+    for (const line of (summary.chronicle || []).slice(0, 4)) {
+      htmlEl('li', '', chronicle).textContent = line;
+    }
   }
 
   /// Todo lo que se aparcó mientras algo se movía, de una vez y con la escena
@@ -720,7 +840,10 @@
     }
     if (type === 'dice_result') {
       const dice = Array.isArray(payload.dice) ? payload.dice : [];
-      schedule(() => settleDice(dice), ART.DICE_STAMP_MS);
+      // Estampar y AGUANTAR. El sello tarda `DICE_STAMP_MS` en caer, y a partir
+      // de ahí el resultado se queda quieto para que la mesa lo lea desde el
+      // sofá antes de que encoja hacia la esquina.
+      schedule(() => settleDice(dice), ART.DICE_STAMP_MS + ART.DICE_HOLD_MS);
       schedule(stowDice, ART.DICE_STOW_MS);
       return;
     }
@@ -758,7 +881,7 @@
     context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED,e=>{authority.release(e.senderId);if(!authority.senderId){$('connection').hidden=false;$('connection').querySelector('h2').textContent='RECONECTANDO'}});
     context.start({disableIdleTimeout:true});
   } else {
-    const demo={protocolVersion:1,board:{publicId:'clasica',title:'Oca Clásica',visualTheme:'clasica',goal:63,geometryVersion:1,specialSquares:{'5':'oca','6':'puente','9':'oca','12':'puente','14':'oca','18':'oca','19':'posada','23':'oca','26':'dados','27':'oca','31':'pozo','32':'oca','36':'oca','41':'oca','42':'laberinto','45':'oca','50':'oca','53':'dados','54':'oca','56':'carcel','58':'muerte','59':'oca','63':'jardin'}},players:[{publicId:'j1',displayName:'Lola',inkIndex:0,symbol:'1',position:23,statuses:['pozo']},{publicId:'j2',displayName:'Dani',inkIndex:3,symbol:'2',position:18,statuses:[]},{publicId:'j3',displayName:'Rita',inkIndex:1,symbol:'3',position:18,statuses:[]}],turn:{currentPlayerId:'j1',round:4,dice:[5,3]},phase:'idle',effects:['REGLA DE LA NOCHE'],privacyCover:false,accessibility:{reducedMotion:false}};
+    const demo={protocolVersion:1,board:{publicId:'clasica',title:'Oca Clásica',visualTheme:'clasica',goal:63,geometryVersion:1,specialSquares:{'5':'oca','6':'puente','12':'puente','13':'oca','19':'posada','20':'oca','26':'dados','27':'oca','31':'pozo','35':'oca','42':'laberinto','43':'oca','51':'oca','53':'dados','56':'carcel','58':'muerte','63':'jardin'}},players:[{publicId:'j1',displayName:'Lola',inkIndex:0,symbol:'1',position:23,statuses:['pozo']},{publicId:'j2',displayName:'Dani',inkIndex:3,symbol:'2',position:18,statuses:[]},{publicId:'j3',displayName:'Rita',inkIndex:1,symbol:'3',position:18,statuses:[]}],turn:{currentPlayerId:'j1',round:4,dice:[5,3]},phase:'idle',effects:['REGLA DE LA NOCHE'],privacyCover:false,accessibility:{reducedMotion:false}};
     state=demo;render();
     if(demoMode==='card'){state.publicCard={title:'CONFESIÓN DE BARRA',body:'Cuenta tu peor excusa para llegar tarde o cumple el castigo.',suit:'ESPADAS',nonAlcohol:false};render()}
     if(demoMode==='ceremony'){state.publicCeremony={type:'oca',title:'DE OCA A OCA',body:'Y BEBE PORQUE TE TOCA'};render()}
@@ -766,6 +889,29 @@
     if(demoMode==='privacy'){state.privacyCover=true;render()}
     if(demoMode==='private'){state.secretDecision=true;render()}
     if(demoMode==='victory'){state.players[0].position=63;state.publicCeremony={type:'victoria',title:'CAMPEÓN DE LA OCA',body:'LOLA'};render()}
+    // EL CUADRO DE HONOR con datos de una partida de verdad: podio, palotes y
+    // crónica. Es la vista que hay que revisar a 1280×720 y a 4K.
+    if(demoMode==='stats'){
+      state.players[0].position=63;
+      state.publicCeremony={type:'victoria',title:'CAMPEÓN DE LA OCA',body:'LOLA'};
+      state.summary={
+        winnerId:'j1',winnerName:'Lola',rounds:11,durationMs:23*60000,
+        totalDrinks:41,totalGiven:18,
+        rows:[
+          {publicId:'j1',displayName:'Lola',inkIndex:0,symbol:'1',position:63,drinks:12,given:11,deaths:1,wells:1,jails:0,challengesDone:4,challengesQuit:1},
+          {publicId:'j3',displayName:'Rita',inkIndex:1,symbol:'3',position:47,drinks:17,given:4,deaths:0,wells:2,jails:1,challengesDone:2,challengesQuit:3},
+          {publicId:'j2',displayName:'Dani',inkIndex:3,symbol:'2',position:38,drinks:8,given:3,deaths:2,wells:0,jails:0,challengesDone:5,challengesQuit:0},
+          {publicId:'j4',displayName:'Bea',inkIndex:5,symbol:'4',position:21,drinks:4,given:0,deaths:0,wells:1,jails:2,challengesDone:1,challengesQuit:2},
+        ],
+        chronicle:[
+          'LOLA CONQUISTÓ LA CASILLA 63 EN 11 RONDAS.',
+          'LOLA FUE LA MANO MÁS GENEROSA: 11 REPARTIDOS.',
+          'RITA SE LLEVÓ LA CUENTA MÁS LARGA: 17.',
+          'EL POZO ATRAPÓ A LA MESA 4 VECES.',
+        ],
+      };
+      render();
+    }
     if(demoMode==='dice'){
       // Turno completo en bucle: tirada, recorrido y banda, tal cual llega de
       // un móvil de verdad.

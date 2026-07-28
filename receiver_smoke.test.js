@@ -497,7 +497,29 @@ test('un turno entero: dados sobre el tablero, ficha andando y banda al final', 
     ['4', '2'],
   );
   assert.equal(cast.element('dice-total').textContent, '6');
-  clock.advance(boardArt.DICE_STOW_MS + 40);
+
+  // EL AGUANTE. Pasada la estampa, el resultado se queda quieto y grande: a
+  // tres metros no da tiempo a leerlo si encoge en cuanto cae el sello. Aquí
+  // se comprueba que sigue puesto casi hasta el final del aguante, porque es
+  // justo lo que se acortaba sin querer al tocar los tiempos.
+  clock.advance(boardArt.DICE_HOLD_MS - 40);
+  assert.equal(
+    cast.element('dice-stage').hidden,
+    false,
+    'el resultado tiene que aguantar en pantalla, no encoger con la estampa',
+  );
+  assert.equal(cast.element('dice-total').textContent, '6');
+  // Y LA FICHA NO SE MUEVE MIENTRAS EL DADO AGUANTA. Alargar el aguante sin
+  // que el recorrido lo espere dejaría a la ficha andando por debajo del
+  // resultado, que es justo lo que la línea de tiempo evita.
+  assert.ok(near(tokenAt(), 12), 'la ficha espera a que el dado termine de aguantar');
+
+  // Ni siquiera en el último instante del tramo del dado, con el resultado ya
+  // encogiendo hacia el sello.
+  clock.advance(boardArt.DICE_STOW_MS - 40);
+  assert.ok(near(tokenAt(), 12), 'la ficha no arranca hasta que el dado se guarda');
+
+  clock.advance(120);
   assert.equal(cast.element('roll-slot').hidden, false, 'el resultado se guarda en la esquina');
   assert.equal(cast.element('roll-total').textContent, '6');
   // Y solo AHORA empieza a andar la ficha, con la banda todavía sin sacar.
@@ -604,4 +626,68 @@ test('el rastro del recorrido no acumula huellas sin límite', () => {
   // Y al aterrizar el tablero se queda limpio.
   tick(total);
   assert.equal(cast.element('board-trail').children.length, 0);
+});
+
+/// El tramo del dado vive en dos idiomas a la vez. Este total tiene que ser el
+/// mismo que `tvDiceStageMs` en lib/domain/tv/tv_event_cues.dart, cuya suite
+/// afirma el mismo número: el móvil lo suma para saber cuándo puede volver a
+/// habilitar TIRAR. Si se acorta aquí y no allí, la mesa podrá tirar con los
+/// dados todavía en pantalla.
+test('el tramo del dado da el mismo total que el móvil', () => {
+  assert.equal(boardArt.DICE_ROLL_MS, 900);
+  assert.equal(boardArt.DICE_STAMP_MS, 240);
+  assert.equal(boardArt.DICE_HOLD_MS, 900);
+  assert.equal(boardArt.DICE_STOW_MS, 260);
+  assert.equal(boardArt.DICE_STAGE_MS, 2300);
+
+  // Lo que la mesa ve QUIETO es la estampa más el aguante; por debajo de un
+  // segundo no da tiempo a leer el número desde el sofá.
+  assert.ok(boardArt.DICE_STAMP_MS + boardArt.DICE_HOLD_MS >= 1000);
+});
+
+/// EL CUADRO DE HONOR. Mismo reparto que el resumen del móvil: podio, palotes
+/// de bar en grupos de cinco y crónica. Los palotes se DIBUJAN -cuatro trazos
+/// y el quinto cruzado-, que es lo que se lee de un vistazo desde el sofá.
+test('el resumen final pinta podio, palotes y crónica', () => {
+  const { element } = renderDemo('stats');
+
+  assert.equal(element('ceremony').hidden, false);
+  assert.equal(element('summary').hidden, false);
+  // Con resumen, la lista pelada de respaldo se retira.
+  assert.equal(element('ceremony-ranking').hidden, true);
+
+  assert.equal(element('summary-rounds').textContent, '11 RONDAS');
+  assert.equal(element('summary-time').textContent, '23 MIN');
+  assert.equal(element('summary-drinks').textContent, '41 EN LA CUENTA');
+
+  // Podio de tres con el campeón en el CENTRO, como en el móvil.
+  const podium = element('summary-podium').children;
+  assert.equal(podium.length, 3);
+  assert.equal(podium[1].children[1].textContent, 'LOLA');
+
+  // Una fila por jugador y los palotes agrupados de cinco en cinco.
+  const tallies = element('summary-tallies').children;
+  assert.equal(tallies.length, 4);
+  const marks = (row) => row.children[1].children;
+  // Lola bebió 12: 5 + 5 + 2.
+  assert.deepEqual(
+    [...marks(tallies[0])].map((g) => g.children.length),
+    [5, 5, 2],
+  );
+  // Un grupo lleno son CINCO trazos: cuatro palos y el que los cruza.
+  assert.equal(marks(tallies[0])[0].children.length, 5);
+  // Bea bebió 4: un solo grupo incompleto, sin trazo cruzado.
+  assert.deepEqual([...marks(tallies[3])].map((g) => g.children.length), [4]);
+
+  assert.equal(element('summary-chronicle').children.length, 4);
+});
+
+/// Un móvil viejo que aún no manda resumen no puede dejar la tele en blanco al
+/// acabar: se sigue viendo la clasificación de siempre.
+test('sin resumen, la victoria conserva la clasificación de respaldo', () => {
+  const { element } = renderDemo('victory');
+  assert.equal(element('ceremony').hidden, false);
+  assert.equal(element('summary').hidden, true);
+  assert.equal(element('ceremony-ranking').hidden, false);
+  assert.match(element('ceremony-ranking').innerHTML, /Lola/);
 });

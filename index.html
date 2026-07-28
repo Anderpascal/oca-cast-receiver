@@ -82,12 +82,30 @@
         <div class="card-foot">SE VOTA EN EL MANDO</div>
       </div>
     </section>
+    <!-- EL CUADRO DE HONOR. Mismo reparto que el resumen del móvil: campeón,
+         podio, palotes de bar por jugador y la crónica de la noche. -->
     <section id="ceremony" class="takeover ceremony" hidden>
       <div class="burst"></div>
       <div class="ceremony-copy">
         <div id="ceremony-type" class="eyebrow"></div>
         <h2 id="ceremony-title"></h2>
         <p id="ceremony-body"></p>
+        <div id="summary" class="summary two-col" hidden>
+          <div class="col">
+            <div class="summary-kicker">EL CUADRO DE HONOR</div>
+            <ol id="summary-podium" class="podium"></ol>
+            <div class="summary-stamps">
+              <div class="stamp" id="summary-rounds"></div>
+              <div class="stamp" id="summary-time"></div>
+              <div class="stamp" id="summary-drinks"></div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="summary-kicker">ESTADÍSTICAS DE LA PARTIDA</div>
+            <div id="summary-tallies" class="tallies"></div>
+            <ul id="summary-chronicle" class="chronicle"></ul>
+          </div>
+        </div>
         <ol id="ceremony-ranking" class="ceremony-ranking" hidden></ol>
       </div>
     </section>

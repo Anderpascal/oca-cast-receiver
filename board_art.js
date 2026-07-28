@@ -259,6 +259,12 @@
   const DICE_CHANGES = 9;
   const DICE_FIRST_MS = 60, DICE_LAST_MS = 140;
   const DICE_STAMP_MS = 240, DICE_STOW_MS = 260;
+  /// Lo que el resultado se QUEDA quieto y grande antes de encoger. En el móvil
+  /// el dado lo tiene uno en la mano y lo mira cuando quiere; en la tele, a tres
+  /// metros y con la mesa hablando, 240 ms de estampa se pasan sin que nadie
+  /// haya leído el número. Este tramo es solo de la tele y no existe en el
+  /// dado del móvil. Espejo de `tvDiceHoldMs` en Dart.
+  const DICE_HOLD_MS = 900;
 
   /// Instantes (ms desde el inicio) en los que el dado cambia de cara.
   function diceBeats() {
@@ -273,11 +279,11 @@
     return beats;
   }
   const DICE_ROLL_MS = diceBeats()[DICE_CHANGES - 1];
-  const DICE_STAGE_MS = DICE_ROLL_MS + DICE_STAMP_MS + DICE_STOW_MS;
+  const DICE_STAGE_MS = DICE_ROLL_MS + DICE_STAMP_MS + DICE_HOLD_MS + DICE_STOW_MS;
 
   return {
     geometryFor, centerOf, centerFor, PICTS, ROLE, THEMES, themeFor, U,
     hopPlanFor, hopDuration, ceremonyLook, CEREMONY,
-    diceBeats, DICE_ROLL_MS, DICE_STAMP_MS, DICE_STOW_MS, DICE_STAGE_MS,
+    diceBeats, DICE_ROLL_MS, DICE_STAMP_MS, DICE_HOLD_MS, DICE_STOW_MS, DICE_STAGE_MS,
   };
 });
