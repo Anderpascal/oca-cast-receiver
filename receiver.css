@@ -60,7 +60,17 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.14;bac
    compartir viewBox y `preserveAspectRatio` las fichas caen exactamente sobre
    su casilla. `will-change` la saca a capa propia del compositor, así que
    andar una ficha no ensucia el cartel de debajo. */
-.board-fx{position:absolute;inset:0;pointer-events:none;will-change:transform}
+.board-fx{position:absolute;inset:0;pointer-events:none;will-change:transform;transition:height .3s ease-out}
+/* Y encoge CON él. `#board` es un hijo en flujo y vive en la caja de CONTENIDO
+   del marco, pero la capa absoluta se mide contra la caja de RELLENO: con la
+   banda puesta el marco se reserva `--band` abajo, la plancha impresa encogía
+   y las fichas no, así que dejaban de caer sobre su casilla —y las de las
+   últimas filas se salían del tablero—.
+   Se corrige por ALTURA y no por `bottom`: `.board` fija `height:100%`, y en un
+   elemento posicionado una altura declarada gana al desplazamiento inferior,
+   así que `bottom:var(--band)` se quedaba en nada. Misma transición que el
+   marco para que tampoco se desencuadren durante los 300 ms del encogido. */
+.paper.banded .board-fx{height:calc(100% - var(--band))}
 /* Mientras la ficha anda, la capa no hace NADA más: el latido del anillo se
    para para dejarle el presupuesto del cuadro entero al salto. */
 .board-fx.hopping .mark-ring{animation:none;opacity:.6}

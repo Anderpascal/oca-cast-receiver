@@ -35,7 +35,24 @@
   /// ficha ha aterrizado, no antes.
   let pendingScore = false;
   let lastRoll = [];
+  /// Quién tiró los dados que están en el sello. El turno avanza antes de que
+  /// el sello se pinte, así que preguntarle al estado quién juega le ponía la
+  /// tinta del siguiente.
+  let lastRollPlayer = null;
   let shownTurn = '';
+
+  /// De quién es la ficha de un cue. El móvil FIRMA el recorrido y la tirada
+  /// porque la escena se reparte en el tiempo: cuando le toca animar el salto,
+  /// la estampa con el turno ya cerrado ha llegado hace rato, y `currentPlayerId`
+  /// apunta al jugador siguiente. Sin firma andaba la ficha equivocada cada vez
+  /// que el aterrizaje cerraba el turno (cárcel, pozo, posada, laberinto).
+  /// El respaldo mantiene compatible a un móvil con el protocolo v1 antiguo.
+  function cuePlayerId(payload) {
+    if (payload && typeof payload.player === 'string' && payload.player) {
+      return payload.player;
+    }
+    return state && state.turn ? state.turn.currentPlayerId : null;
+  }
 
   function send(senderId, type, extra={}) {
     if (!context || !senderId) return;
@@ -437,8 +454,12 @@
   function paintRollSlot(animate) {
     const slot = $('roll-slot');
     if (!lastRoll.length) { slot.hidden = true; return; }
-    const current = state && state.players.find(p => p.publicId === state.turn.currentPlayerId);
-    // Tinta de quien tiró: el sello se lee de un vistazo sin buscar el nombre.
+    // Tinta de QUIEN TIRÓ, no de quien juega ahora: el sello sigue en pantalla
+    // después de que el turno avance, y con la tinta del siguiente le atribuía
+    // la jugada a quien no la había hecho.
+    const who = lastRollPlayer || (state && state.turn.currentPlayerId);
+    const current = state && state.players.find(p => p.publicId === who);
+    // El sello se lee de un vistazo sin buscar el nombre.
     setVar(slot, '--tone', colors[current ? current.inkIndex : 0] || colors[0]);
     paintFaces($('roll-faces'), lastRoll);
     $('roll-total').textContent = String(sum(lastRoll));
@@ -489,7 +510,7 @@
   }
 
   function playHop(payload) {
-    const playerId = state?.turn?.currentPlayerId;
+    const playerId = cuePlayerId(payload);
     const node = tokenNodes.get(playerId);
     const segments = ART.hopPlanFor(payload.from, payload.path, payload.to);
     const fx = $('board-fx');
@@ -834,12 +855,14 @@
   function animateCue(type, payload) {
     if (type === 'dice_started') {
       lastRoll = [];
+      lastRollPlayer = null;
       $('roll-slot').hidden = true;
       schedule(startRolling, ART.DICE_ROLL_MS);
       return;
     }
     if (type === 'dice_result') {
       const dice = Array.isArray(payload.dice) ? payload.dice : [];
+      lastRollPlayer = cuePlayerId(payload);
       // Estampar y AGUANTAR. El sello tarda `DICE_STAMP_MS` en caer, y a partir
       // de ahí el resultado se queda quieto para que la mesa lo lea desde el
       // sofá antes de que encoja hacia la esquina.
@@ -850,7 +873,7 @@
     if (type === 'piece_path') {
       // La ficha se ancla YA en su casilla de origen: el snapshot con la
       // posición final viene detrás y no puede teletransportarla.
-      const playerId = state?.turn?.currentPlayerId;
+      const playerId = cuePlayerId(payload);
       if (playerId && typeof payload.from === 'number') {
         hopHold = {id: playerId, position: payload.from};
         if (state && !hopActive) renderTokens();

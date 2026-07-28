@@ -32,7 +32,14 @@ class FakeElement {
     this.hidden = false;
     this.textContent = '';
     this.innerHTML = '';
-    this.style = {};
+    // Con `setProperty` de verdad: el receptor pinta por variable CSS (la
+    // tinta del sello de la tirada, el tono de la banda) y sin esto no había
+    // forma de comprobar a quién se le atribuye una jugada.
+    this.style = {
+      setProperty(name, value) {
+        this[name] = value;
+      },
+    };
     this.className = '';
     this.classList = new FakeClassList();
     this.children = [];
@@ -205,6 +212,29 @@ test('HTML tiene IDs únicos, scripts ordenados y ninguna ruta de emparejamiento
     fs.existsSync(require.resolve('./assets/AlfaSlabOne-Regular.ttf')),
     true,
   );
+});
+
+test('con la banda puesta las dos planchas encogen lo mismo', () => {
+  // Las fichas viven en `#board-fx` y las casillas en `#board`: si una encoge
+  // y la otra no, las fichas dejan de caer sobre su casilla y las de las
+  // últimas filas se salen del tablero. La banda de ceremonia reserva
+  // `--band` abajo, y ahí es donde se desencuadraban.
+  const css = fs.readFileSync(require.resolve('./receiver.css'), 'utf8');
+  const regla = (selector) => {
+    const match = css.match(
+      new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`),
+    );
+    return match ? match[1] : null;
+  };
+  const marco = regla('.paper.banded .board-frame');
+  const capa = regla('.paper.banded .board-fx');
+  assert.ok(marco && marco.includes('var(--band)'), 'el marco se encoge la banda');
+  assert.ok(capa, 'la capa de fichas necesita su propia regla con la banda');
+  assert.ok(capa.includes('var(--band)'), 'la capa se encoge lo mismo que el marco');
+  // Y tiene que hacerlo por ALTURA: `.board` declara `height:100%`, y en un
+  // elemento posicionado una altura declarada gana al desplazamiento inferior,
+  // así que corregirlo con `bottom` no llega a aplicarse nunca.
+  assert.match(capa, /height\s*:/, 'la capa se corrige por altura, no por bottom');
 });
 
 test('demo tablero construye 63 casillas y oculta conexión', () => {
@@ -540,6 +570,72 @@ test('un turno entero: dados sobre el tablero, ficha andando y banda al final', 
   assert.equal(cast.element('banner-title').textContent, 'DE OCA A OCA');
   assert.equal(cast.element('banner-type').textContent, 'CASILLA DE LA OCA');
   assert.equal(cast.element('ceremony').hidden, true);
+});
+
+test('anda la ficha de QUIEN MOVIÓ aunque el turno ya haya pasado', () => {
+  // La cárcel, el pozo, la posada y el laberinto cierran el turno en el
+  // propio aterrizaje: la estampa con el turno ya en el jugador siguiente
+  // llega mientras el dado todavía rueda, y para cuando le toca animar el
+  // salto el receptor ya no puede preguntar «¿quién juega?». Antes movía la
+  // ficha del siguiente, y la mesa veía ir a la cárcel a quien no era.
+  const clock = fakeClock();
+  const cast = bootCastReceiver({
+    Date: { now: clock.now },
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    requestAnimationFrame: clock.requestAnimationFrame,
+  });
+  const geo = boardArt.geometryFor(63);
+  const centerOf = (n) => boardArt.centerOf(geo.cells[n - 1]);
+  const posOf = (symbol) => {
+    for (const node of cast.element('board-tokens').children) {
+      const mark = node.children.find((c) => c.class === 'token-mark');
+      if (mark && mark.textContent === symbol) {
+        const m = node.transform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+        return { x: Number(m[1]), y: Number(m[2]) };
+      }
+    }
+    return null;
+  };
+  const near = (p, n) => p && Math.abs(p.x - centerOf(n).x) < 1 && Math.abs(p.y - centerOf(n).y) < 1;
+
+  const mesa = publicSnapshot();
+  mesa.players.push({
+    publicId: 'j2', displayName: 'Dani', inkIndex: 3, symbol: '2', position: 40, statuses: [],
+  });
+  cast.connect('movil-a');
+  cast.message('movil-a', castCue(1, 'snapshot', { state: mesa }));
+  assert.ok(near(posOf('1'), 12), 'la ficha 1 empieza en la 12');
+  assert.ok(near(posOf('2'), 40), 'la ficha 2 empieza en la 40');
+
+  // Turno de j1: tira, anda de la 12 a la 18 y la casilla cierra el turno.
+  cast.message('movil-a', castCue(2, 'dice_started'));
+  cast.message('movil-a', castCue(3, 'dice_result', { dice: [4, 2], total: 6, player: 'j1' }));
+  cast.message('movil-a', castCue(4, 'piece_path', {
+    from: 12, to: 18, path: [13, 14, 15, 16, 17, 18], player: 'j1',
+  }));
+  const turnoCerrado = publicSnapshot();
+  turnoCerrado.players.push({
+    publicId: 'j2', displayName: 'Dani', inkIndex: 3, symbol: '2', position: 40, statuses: [],
+  });
+  turnoCerrado.players[0].position = 18;
+  turnoCerrado.turn.currentPlayerId = 'j2'; // el turno YA ha avanzado
+  cast.message('movil-a', castCue(5, 'snapshot', { state: turnoCerrado }));
+
+  // El sello guarda la tirada con la tinta de QUIEN TIRÓ, no la del siguiente.
+  clock.advance(boardArt.DICE_STAGE_MS + 40);
+  assert.equal(cast.element('roll-total').textContent, '6');
+  assert.equal(cast.element('roll-slot').style['--tone'], '#0078bf', 'tinta de j1');
+
+  // Y la que anda es la 1. La 2 no se mueve de su casilla en todo el salto.
+  const total = boardArt.hopDuration(boardArt.hopPlanFor(12, [13, 14, 15, 16, 17, 18], 18));
+  for (let t = 0; t < total; t += 120) {
+    clock.advance(120);
+    assert.ok(near(posOf('2'), 40), 'la ficha del jugador siguiente no se mueve');
+  }
+  clock.advance(300);
+  assert.ok(near(posOf('1'), 18), 'anda y aterriza la ficha de quien movió');
+  assert.ok(near(posOf('2'), 40), 'la del siguiente sigue en su casilla');
 });
 
 test('el reto se lee a pantalla completa y dice a quién le toca', () => {

@@ -30,12 +30,14 @@ detrás: esto es una carpeta de ficheros estáticos.
 python -m http.server 8080
 ```
 
-- `http://localhost:8080/?demo=board`
-- `http://localhost:8080/?demo=card`
-- `http://localhost:8080/?demo=ceremony`
-- `http://localhost:8080/?demo=victory`
-- `http://localhost:8080/?demo=private`
-- `http://localhost:8080/?demo=privacy`
+- `?demo=board` — el tablero en reposo
+- `?demo=dice` — un turno completo en bucle: tirada, ficha andando y banda
+- `?demo=hop` — solo el recorrido de la ficha
+- `?demo=card` — el reto a pantalla completa
+- `?demo=ceremony` / `?demo=castigo` — la banda de ceremonia
+- `?demo=victory` / `?demo=stats` — el final y el cuadro de honor
+- `?demo=private` — aviso de decisión secreta en el mando
+- `?demo=privacy` — la tele tapada
 
 Conviene revisarlo a 1280×720, 1920×1080 y 3840×2160.
 
@@ -49,7 +51,13 @@ node receiver_smoke.test.js
 La primera valida sesiones, replay, saltos, snapshots reparadores, el esquema
 de presentación y que solo mande un emisor. La segunda ejerce las vistas demo
 y el receptor real sobre un CAF simulado (autoridad, ACK, reparación, límite
-de 64 KB y rechazos), sin depender de un dispositivo Cast.
+de 64 KB y rechazos), sin depender de un dispositivo Cast. Cubre además la
+geometría del tablero, el reparto de tiempos del salto, la animación de la
+ficha cuadro a cuadro y dos cosas que se rompieron en su día: que anda la
+ficha de **quien movió** —el recorrido y la tirada llegan firmados con el
+asiento, porque cuando la tele los reproduce el turno ya puede haber pasado al
+siguiente— y que con la banda de ceremonia puesta las dos planchas del tablero
+encogen lo mismo, o las fichas dejan de caer sobre su casilla.
 
 ## Licencias
 
