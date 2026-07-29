@@ -237,6 +237,24 @@ test('con la banda puesta las dos planchas encogen lo mismo', () => {
   assert.match(capa, /height\s*:/, 'la capa se corrige por altura, no por bottom');
 });
 
+test('el cuadro final no trunca estadísticas y escala el podio en TV', () => {
+  const css = fs.readFileSync(require.resolve('./receiver.css'), 'utf8');
+  assert.match(
+    css,
+    /\.tally\{[^}]*grid-template-columns:max-content minmax\(0,1fr\) auto/,
+  );
+  assert.match(css, /\.podium li\{[^}]*max-width:27\.78vh/);
+  assert.match(css, /\.podium \.step\{[^}]*box-sizing:content-box/);
+  assert.match(css, /\.podium li:nth-child\(1\) \.step\{height:clamp\(44px,5\.6vh,9\.63vh\)\}/);
+  assert.match(css, /\.podium li:nth-child\(2\) \.step\{height:clamp\(58px,6\.4vh,10\.9vh\)\}/);
+  assert.match(css, /\.podium li:nth-child\(3\) \.step\{height:clamp\(40px,5\.4vh,9\.26vh\)\}/);
+
+  const extra = css.match(/\.tally \.extra\{([^}]*)\}/)?.[1] || '';
+  assert.doesNotMatch(extra, /text-overflow|overflow:hidden/);
+  const name = css.match(/\.tally \.name\{([^}]*)\}/)?.[1] || '';
+  assert.doesNotMatch(name, /text-overflow|overflow:hidden/);
+});
+
 test('demo tablero construye 63 casillas y oculta conexión', () => {
   const { element } = renderDemo('board');
   assert.equal(element('board-cells').children.length, 63);

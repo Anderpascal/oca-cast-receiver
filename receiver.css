@@ -262,25 +262,25 @@ body.reduced *,body.reduced *:before,body.reduced *:after{animation:none!importa
 
 /* El podio: tres planchas de distinta altura, la del campeón la más alta. */
 .podium{list-style:none;display:flex;align-items:flex-end;justify-content:center;gap:clamp(8px,1vw,1.85vh);margin:0;padding:0}
-.podium li{flex:1 1 0;max-width:11em;display:flex;flex-direction:column;align-items:center;gap:.35em}
-.podium .step{width:100%;background:var(--paper);color:var(--ink);border:clamp(3px,.28vw,.52vh) solid var(--ink);display:grid;place-items:center;font:clamp(20px,2.2vw,4.26vh)/1 Alfa}
-.podium li:nth-child(1) .step{height:clamp(58px,6.4vh,10.9vh)}
-.podium li:nth-child(2) .step{height:clamp(44px,4.8vh,8.15vh)}
-.podium li:nth-child(3) .step{height:clamp(34px,3.6vh,6.11vh)}
+.podium li{flex:1 1 0;max-width:27.78vh;display:flex;flex-direction:column;align-items:center;gap:.35em}
+.podium .step{box-sizing:content-box;width:100%;background:var(--paper);color:var(--ink);border:clamp(3px,.28vw,.52vh) solid var(--ink);display:grid;place-items:center;font:clamp(20px,2.2vw,4.26vh)/1 Alfa}
+.podium li:nth-child(1) .step{height:clamp(44px,5.6vh,9.63vh)}
+.podium li:nth-child(2) .step{height:clamp(58px,6.4vh,10.9vh)}
+.podium li:nth-child(3) .step{height:clamp(40px,5.4vh,9.26vh)}
 .podium .who{font:clamp(15px,1.35vw,2.6vh)/1.05 Alfa;text-align:center;overflow-wrap:anywhere}
 .podium .sq{font-weight:800;letter-spacing:.1em;font-size:clamp(10px,.8vw,1.48vh);opacity:.7}
-.podium .dot{width:1.8em;height:1.8em;border-radius:50%;border:3px solid var(--paper);display:grid;place-items:center;font-family:Alfa;font-size:clamp(13px,1.1vw,2.13vh)}
+.podium .dot{width:1.8em;height:1.8em;border-radius:50%;border:clamp(2px,.21vw,.39vh) solid var(--paper);display:grid;place-items:center;font-family:Alfa;font-size:clamp(13px,1.1vw,2.13vh)}
 
 /* Palotes de bar: cuatro trazos y el quinto cruzado, como en el móvil. */
 .tallies{display:flex;flex-direction:column;gap:.35em}
-.tally{display:grid;grid-template-columns:minmax(0,11em) 1fr auto;align-items:center;gap:.7em;padding:.3em 0;border-bottom:1px solid #f4eddc33}
+.tally{display:grid;grid-template-columns:max-content minmax(0,1fr) auto;align-items:center;gap:.7em;padding:.3em 0;border-bottom:1px solid #f4eddc33}
 .tally .who{min-width:0;display:flex;flex-direction:column;gap:.1em}
-.tally .name{font-weight:800;letter-spacing:.06em;font-size:clamp(12px,1.05vw,2.04vh);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tally .name{font-weight:800;letter-spacing:.06em;font-size:clamp(12px,1.05vw,2.04vh);white-space:nowrap}
 .tally .marks{display:flex;flex-wrap:wrap;gap:.45em;min-width:0}
 .tally .marks svg{display:block;width:clamp(26px,2.3vw,4.4vh);height:auto}
 .tally .none{opacity:.35;font-weight:800}
 .tally .total{font:clamp(16px,1.5vw,2.87vh)/1 Alfa;min-width:1.6em;text-align:right}
-.tally .extra{font-weight:800;letter-spacing:.06em;font-size:clamp(9px,.72vw,1.39vh);opacity:.62;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tally .extra{font-weight:800;letter-spacing:.06em;font-size:clamp(9px,.72vw,1.39vh);opacity:.62;white-space:nowrap}
 
 .chronicle{list-style:none;margin:clamp(14px,1.8vh,3vh) 0 0;padding:0;display:flex;flex-direction:column;gap:.3em}
 .chronicle li{font-weight:750;letter-spacing:.06em;font-size:clamp(11px,.95vw,1.85vh);opacity:.85;text-align:center}
