@@ -212,6 +212,9 @@ test('HTML tiene IDs únicos, scripts ordenados y ninguna ruta de emparejamiento
     fs.existsSync(require.resolve('./assets/AlfaSlabOne-Regular.ttf')),
     true,
   );
+  assert.equal(fs.existsSync(require.resolve('./goose_token_face.png')), true);
+  assert.match(receiverSource, /goose_token_face\.png/);
+  assert.doesNotMatch(receiverSource, /token-mark/);
 });
 
 test('con la banda puesta las dos planchas encogen lo mismo', () => {
@@ -605,10 +608,9 @@ test('anda la ficha de QUIEN MOVIÓ aunque el turno ya haya pasado', () => {
   });
   const geo = boardArt.geometryFor(63);
   const centerOf = (n) => boardArt.centerOf(geo.cells[n - 1]);
-  const posOf = (symbol) => {
+  const posOf = (playerId) => {
     for (const node of cast.element('board-tokens').children) {
-      const mark = node.children.find((c) => c.class === 'token-mark');
-      if (mark && mark.textContent === symbol) {
+      if (node['data-player-id'] === playerId) {
         const m = node.transform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
         return { x: Number(m[1]), y: Number(m[2]) };
       }
@@ -623,8 +625,8 @@ test('anda la ficha de QUIEN MOVIÓ aunque el turno ya haya pasado', () => {
   });
   cast.connect('movil-a');
   cast.message('movil-a', castCue(1, 'snapshot', { state: mesa }));
-  assert.ok(near(posOf('1'), 12), 'la ficha 1 empieza en la 12');
-  assert.ok(near(posOf('2'), 40), 'la ficha 2 empieza en la 40');
+  assert.ok(near(posOf('j1'), 12), 'la ficha 1 empieza en la 12');
+  assert.ok(near(posOf('j2'), 40), 'la ficha 2 empieza en la 40');
 
   // Turno de j1: tira, anda de la 12 a la 18 y la casilla cierra el turno.
   cast.message('movil-a', castCue(2, 'dice_started'));
@@ -649,11 +651,11 @@ test('anda la ficha de QUIEN MOVIÓ aunque el turno ya haya pasado', () => {
   const total = boardArt.hopDuration(boardArt.hopPlanFor(12, [13, 14, 15, 16, 17, 18], 18));
   for (let t = 0; t < total; t += 120) {
     clock.advance(120);
-    assert.ok(near(posOf('2'), 40), 'la ficha del jugador siguiente no se mueve');
+    assert.ok(near(posOf('j2'), 40), 'la ficha del jugador siguiente no se mueve');
   }
   clock.advance(300);
-  assert.ok(near(posOf('1'), 18), 'anda y aterriza la ficha de quien movió');
-  assert.ok(near(posOf('2'), 40), 'la del siguiente sigue en su casilla');
+  assert.ok(near(posOf('j1'), 18), 'anda y aterriza la ficha de quien movió');
+  assert.ok(near(posOf('j2'), 40), 'la del siguiente sigue en su casilla');
 });
 
 test('el reto se lee a pantalla completa y dice a quién le toca', () => {
@@ -663,15 +665,13 @@ test('el reto se lee a pantalla completa y dice a quién le toca', () => {
   conReto.publicCard = {
     title: 'CONFESIÓN DE BARRA',
     body: 'Cuenta tu peor excusa.',
-    suit: 'espadas',
-    nonAlcohol: true,
+    tipo: 'verdad',
     playerId: 'j1',
   };
   cast.message('movil-a', castCue(1, 'snapshot', { state: conReto }));
   assert.equal(cast.element('card').hidden, false);
   assert.equal(cast.element('card-title').textContent, 'CONFESIÓN DE BARRA');
-  assert.equal(cast.element('card-suit').textContent, 'ESPADAS');
-  assert.equal(cast.element('card-sober').hidden, false);
+  assert.equal(cast.element('card-tipo').textContent, 'VERDAD');
   assert.equal(cast.element('card-who').hidden, false);
   assert.equal(cast.element('card-who-name').textContent, 'LOLA');
 });

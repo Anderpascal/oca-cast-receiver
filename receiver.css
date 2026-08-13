@@ -77,7 +77,7 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.14;bac
 .cell-number{font-family:Archivo;font-weight:850;fill:var(--ink)}
 .cell-corner{font-family:Archivo;font-weight:850;fill:var(--ink);opacity:.62}
 .goal-label{font-family:Alfa;fill:var(--ink);letter-spacing:.04em}
-.token-mark{font-family:Archivo;font-weight:900}
+.token-goose{pointer-events:none}
 /* La ficha de quien tiene el turno se distingue con un halo de tinta, no con
    un tamaño distinto: la escala la usa el salto y pelearían. */
 .token{transition:none}
@@ -206,8 +206,6 @@ h1{font:clamp(26px,2.8vw,5.37vh)/.98 Alfa;margin:.28em 0;overflow-wrap:anywhere}
 @keyframes cardin{0%{transform:scale(.86) rotate(-4deg);opacity:0}100%{transform:scale(1) rotate(-.8deg);opacity:1}}
 .card .eyebrow{color:var(--red)}
 .card-head{display:flex;align-items:center;justify-content:center;gap:1em;flex-wrap:wrap}
-.card-sober{border:3px solid var(--green);color:var(--green);padding:.2em .5em;font-weight:900;letter-spacing:.14em;font-size:clamp(13px,1.1vw,2.13vh);transform:rotate(2deg)}
-.card-sober[hidden]{display:none}
 .card-who{display:inline-flex;align-items:center;gap:.6em;margin-top:clamp(20px,2.6vh,4.07vh);border:clamp(3px,.28vw,0.56vh) solid var(--ink);padding:.35em .9em .4em .4em}
 .card-who[hidden]{display:none}
 .card-who-mark{width:1.9em;height:1.9em;border-radius:50%;border:3px solid var(--ink);display:grid;place-items:center;font-family:Alfa;font-size:clamp(18px,1.7vw,3.33vh)}

@@ -278,7 +278,7 @@
     const c = centerAt(positionOf(current));
     el('circle', {
       cx: c.x, cy: c.y, r: U * 0.44, class: 'mark-ring',
-      fill: 'none', stroke: colors[current.inkIndex] || colors[0], 'stroke-width': 6,
+      fill: 'none', stroke: 'var(--pink)', 'stroke-width': 6,
     }, layer);
   }
 
@@ -305,7 +305,10 @@
     for (const [cell, list] of byCell) {
       const {scale} = crowdLayout(list.length);
       list.forEach((p, i) => {
-        const g = el('g', {class: 'token' + (p.publicId === state.turn.currentPlayerId ? ' current' : '')}, layer);
+        const g = el('g', {
+          class: 'token' + (p.publicId === state.turn.currentPlayerId ? ' current' : ''),
+          'data-player-id': p.publicId,
+        }, layer);
         buildToken(g, p, scale);
         const at = restingSpot(cell, i, list.length);
         setTokenAt(g, at.x, at.y, 1);
@@ -325,12 +328,14 @@
       el('circle', {cx: 0, cy: 0, r: r * 1.3, fill: 'none', stroke: 'var(--pink)', 'stroke-width': 7}, g);
     }
     el('circle', {cx: r * 0.16, cy: r * 0.2, r, fill: 'var(--ink)'}, g);
-    el('circle', {cx: 0, cy: 0, r, fill: ink, stroke: 'var(--ink)', 'stroke-width': 5}, g);
-    text(g, player.symbol, {
-      x: 0, y: r * 0.37, 'text-anchor': 'middle',
-      class: 'token-mark', 'font-size': r * 1.1,
-      fill: player.inkIndex === 2 ? 'var(--ink)' : '#fff',
-    });
+    el('circle', {cx: 0, cy: 0, r, fill: 'var(--paper)', stroke: 'var(--ink)', 'stroke-width': 5}, g);
+    el('circle', {cx: 0, cy: 0, r: r * .84, fill: ink}, g);
+    el('image', {
+      href: 'goose_token_face.png',
+      x: -r * .82, y: -r * .82, width: r * 1.64, height: r * 1.64,
+      preserveAspectRatio: 'xMidYMid meet',
+      class: 'token-goose',
+    }, g);
   }
 
   /// Varias fichas en la misma casilla se reparten en rejilla y encogen para
@@ -639,8 +644,7 @@
     const card = state.publicCard;
     $('card').hidden = !card;
     if (!card) return;
-    $('card-suit').textContent = (card.suit || '').toUpperCase();
-    $('card-sober').hidden = !card.nonAlcohol;
+    $('card-tipo').textContent = (card.tipo || '').toUpperCase();
     $('card-title').textContent = card.title;
     $('card-body').textContent = card.body;
     const who = state.players.find(p => p.publicId === (card.playerId || state.turn.currentPlayerId));
@@ -906,7 +910,7 @@
   } else {
     const demo={protocolVersion:1,board:{publicId:'clasica',title:'Oca Clásica',visualTheme:'clasica',goal:63,geometryVersion:1,specialSquares:{'5':'oca','6':'puente','12':'puente','13':'oca','19':'posada','20':'oca','26':'dados','27':'oca','31':'pozo','35':'oca','42':'laberinto','43':'oca','51':'oca','53':'dados','56':'carcel','58':'muerte','63':'jardin'}},players:[{publicId:'j1',displayName:'Lola',inkIndex:0,symbol:'1',position:23,statuses:['pozo']},{publicId:'j2',displayName:'Dani',inkIndex:3,symbol:'2',position:18,statuses:[]},{publicId:'j3',displayName:'Rita',inkIndex:1,symbol:'3',position:18,statuses:[]}],turn:{currentPlayerId:'j1',round:4,dice:[5,3]},phase:'idle',effects:['REGLA DE LA NOCHE'],privacyCover:false,accessibility:{reducedMotion:false}};
     state=demo;render();
-    if(demoMode==='card'){state.publicCard={title:'CONFESIÓN DE BARRA',body:'Cuenta tu peor excusa para llegar tarde o cumple el castigo.',suit:'ESPADAS',nonAlcohol:false};render()}
+    if(demoMode==='card'){state.publicCard={title:'CONFESIÓN DE BARRA',body:'Cuenta tu peor excusa para llegar tarde o cumple el castigo.',tipo:'verdad'};render()}
     if(demoMode==='ceremony'){state.publicCeremony={type:'oca',title:'DE OCA A OCA',body:'Y BEBE PORQUE TE TOCA'};render()}
     if(demoMode==='castigo'){state.publicCeremony={type:'pozo',title:'AL POZO',body:'LOLA'};render()}
     if(demoMode==='privacy'){state.privacyCover=true;render()}
